@@ -11,6 +11,8 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
 from pathlib import Path
+import sys
+from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -55,11 +57,13 @@ MIDDLEWARE = [
 
 # REST Framework settings
 REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
-    ),
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'authentication.authentication.JWTAuthentication',  # Replace 'yourapp' with your actual app name
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',  # Default to allowing only authenticated users
+    ],
 }
-
 
 ROOT_URLCONF = 'radiantplanks_backend.urls'
 
@@ -84,6 +88,21 @@ WSGI_APPLICATION = 'radiantplanks_backend.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
+
+LOGGING = None  # Disable Django's logging config
+
+# Loguru config (this will be used in your logging.py)
+LOGURU_CONFIG = {
+    "handlers": [
+        {
+            "sink": "logs/app.log",
+            "format": "{time} - {name} - {level} - {message}",
+            "rotation": "10 MB",
+            "compression": "zip",
+            "retention": "30 days",
+        },
+    ],
+}
 
 DATABASES = {
     'default': {
