@@ -65,7 +65,7 @@ class LoginView(APIView):
             user.last_login_ip = request.META.get('REMOTE_ADDR')
             user.save()
 
-            token = user.generate_jwt(settings.SECRET_KEY)
+            token = user.generate_jwt(secret_key=settings.SECRET_KEY)
             return Response({
                 'token': token,
                 'user': UserSerializer(user).data
@@ -80,8 +80,21 @@ class UserListView(APIView):
 
     def get(self, request):
         users = NewUser.objects.all()
-        serializer = UserSerializer(users, many=True)
-        return Response(serializer.data)
+        
+        # Manually serialize the data
+        users_data = [
+            {
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "created_at": user.created_at,
+                # Add any other fields you need to include
+            }
+            for user in users
+        ]
+
+        return Response(users_data, status=status.HTTP_200_OK)
+
 
 class UserDetailView(APIView):
     permission_classes = [IsAdminUser]

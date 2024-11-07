@@ -60,6 +60,11 @@ class NewUser(models.Model):
         return check_password(raw_password, self.password)
 
     @property
+    def is_authenticated(self):
+        """Override this method to work with Django authentication system."""
+        return True
+    
+    @property
     def permissions(self):
         """Get all permissions from all groups"""
         return NewPermission.objects.filter(groups__users=self).distinct()
@@ -67,8 +72,8 @@ class NewUser(models.Model):
     def has_permission(self, permission_code):
         return self.permissions.filter(code=permission_code).exists()
 
-    def generate_jwt(self, secret_key, expires_delta=timedelta(days=1)):
-        expire = datetime.utcnow() + expires_delta
+    def generate_jwt(self, secret_key, expires_delta=timedelta(hours=1)):
+        expire = datetime.now() + expires_delta
         payload = {
             "user_id": self.id,
             "email": self.email,
