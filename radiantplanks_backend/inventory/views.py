@@ -162,6 +162,40 @@ class CategoryDeleteView(APIView):
         return Response({"detail": "Category deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
 
 
+class ProductListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get_user_from_token(self, request):
+        token = request.headers.get("Authorization", "").split(" ")[1]
+        try:
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+            user_id = payload.get("user_id")
+            user = NewUser.objects.get(id=user_id)
+            return user
+        except (jwt.ExpiredSignatureError, jwt.DecodeError, NewUser.DoesNotExist):
+            return None
+
+    def get(self, request):
+        user = self.get_user_from_token(request)
+        if not user:
+            return Response({"detail": "Invalid or expired token."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        products = Product.objects.filter(is_active=True)
+        products_data = [
+            {
+                "id": product.id,
+                "product_name": product.product_name,
+                "category": product.category.name if product.category else None,
+                "price": str(product.price),
+                "stock_quantity": product.stock_quantity,
+                "created_date": product.created_date,
+                "updated_date": product.updated_date,
+                "is_active": product.is_active,
+            }
+            for product in products
+        ]
+        return Response(products_data, status=status.HTTP_200_OK)
+
 # Product Views
 class ProductCreateView(APIView):
     permission_classes = [IsAuthenticated]
@@ -176,6 +210,18 @@ class ProductCreateView(APIView):
         except (jwt.ExpiredSignatureError, jwt.DecodeError, NewUser.DoesNotExist):
             return None
 
+
+    def calculate_tiles(self, box_quantity=None, area_sqf=None, pallet_quantity=None, tile_quantity=None):
+        if box_quantity:
+            return box_quantity * 10  # 10 tiles per box
+        elif area_sqf:
+            return int(area_sqf / 23.33)  # Calculate tiles from sqf
+        elif pallet_quantity:
+            return pallet_quantity * 550  # 550 tiles per pallet
+        elif tile_quantity:
+            return tile_quantity  # Direct tile count
+        return None
+    
     def post(self, request):
         user = self.get_user_from_token(request)
         if not user:
@@ -184,9 +230,12 @@ class ProductCreateView(APIView):
         category_id = request.data.get("category_id")
         product_name = request.data.get("product_name")
         price = request.data.get("price")
-        stock_quantity = request.data.get("stock_quantity")
+        box_quantity = request.data.get("box_quantity")
+        area_sqf = request.data.get("area_sqf")
+        pallet_quantity = request.data.get("pallet_quantity")
+        tile_quantity = request.data.get("tile_quantity")
 
-        if not category_id or not product_name or price is None or stock_quantity is None:
+        if not category_id or not product_name or price is None:
             return Response({"detail": "All fields are required."}, status=status.HTTP_400_BAD_REQUEST)
 
         # Check if category exists
@@ -194,6 +243,13 @@ class ProductCreateView(APIView):
             category = Category.objects.get(id=category_id)
         except Category.DoesNotExist:
             return Response({"detail": "Category not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Calculate stock quantity based on provided input type
+        stock_quantity = self.calculate_tiles(box_quantity, area_sqf, pallet_quantity, tile_quantity)
+        
+        if stock_quantity is None:
+            return Response({"detail": "Provide either box_quantity, area_sqf, pallet_quantity, or tile_quantity."}, 
+                            status=status.HTTP_400_BAD_REQUEST)
 
         # Create the Product instance
         product = Product.objects.create(
@@ -207,7 +263,7 @@ class ProductCreateView(APIView):
         return Response({
             "id": product.id,
             "product_name": product.product_name,
-            "price": str(product.price),  # Convert Decimal to string for JSON compatibility
+            "price": str(product.price),
             "stock_quantity": product.stock_quantity,
             "created_date": product.created_date,
             "is_active": product.is_active,
@@ -227,6 +283,19 @@ class ProductUpdateView(APIView):
         except (jwt.ExpiredSignatureError, jwt.DecodeError, NewUser.DoesNotExist):
             return None
 
+
+    def calculate_tiles(self, box_quantity=None, area_sqf=None, pallet_quantity=None, tile_quantity=None):
+        if box_quantity:
+            return box_quantity * 10  # 10 tiles per box
+        elif area_sqf:
+            return int(area_sqf / 23.33)  # Calculate tiles from sqf
+        elif pallet_quantity:
+            return pallet_quantity * 550  # 550 tiles per pallet
+        elif tile_quantity:
+            return tile_quantity  # Direct tile count
+        return None
+    
+
     def put(self, request, product_id):
         user = self.get_user_from_token(request)
         if not user:
@@ -240,7 +309,16 @@ class ProductUpdateView(APIView):
         # Update fields if provided
         product_name = request.data.get("product_name")
         price = request.data.get("price")
-        stock_quantity = request.data.get("stock_quantity")
+        box_quantity = request.data.get("box_quantity")
+        area_sqf = request.data.get("area_sqf")
+        pallet_quantity = request.data.get("pallet_quantity")
+        tile_quantity = request.data.get("tile_quantity")
+
+        stock_quantity = self.calculate_tiles(box_quantity, area_sqf, pallet_quantity, tile_quantity)
+        
+        if stock_quantity is None:
+            return Response({"detail": "Provide either box_quantity, area_sqf, pallet_quantity, or tile_quantity."}, 
+                            status=status.HTTP_400_BAD_REQUEST)
 
         if product_name:
             product.product_name = product_name
