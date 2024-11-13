@@ -251,6 +251,11 @@ class ProductCreateView(APIView):
             return Response({"detail": "Provide either box_quantity, area_sqf, pallet_quantity, or tile_quantity."}, 
                             status=status.HTTP_400_BAD_REQUEST)
 
+        if_exists = Product.objects.filter(product_name=product_name, is_active=True).all()
+        if if_exists:
+            return Response({"detail": "Product already present."}, status=status.HTTP_400_BAD_REQUEST)      
+
+
         # Create the Product instance
         product = Product.objects.create(
             category=category,
@@ -302,7 +307,7 @@ class ProductUpdateView(APIView):
             return Response({"detail": "Invalid or expired token."}, status=status.HTTP_401_UNAUTHORIZED)
 
         try:
-            product = Product.objects.get(id=product_id, created_by=user)
+            product = Product.objects.get(id=product_id, is_active=True)
         except Product.DoesNotExist:
             return Response({"detail": "Product not found."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -319,6 +324,11 @@ class ProductUpdateView(APIView):
         if stock_quantity is None:
             return Response({"detail": "Provide either box_quantity, area_sqf, pallet_quantity, or tile_quantity."}, 
                             status=status.HTTP_400_BAD_REQUEST)
+
+        if_same_name = Product.objects.filter(product_name=product_name, is_active=True).exclude(id=product_id).all()
+        if if_same_name:
+            return Response({"detail": "Product name already present."}, status=status.HTTP_400_BAD_REQUEST)
+
 
         if product_name:
             product.product_name = product_name
