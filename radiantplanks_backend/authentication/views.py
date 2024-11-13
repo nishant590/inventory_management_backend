@@ -7,7 +7,7 @@ from .serializers import UserSerializer, LoginSerializer
 from rest_framework import exceptions
 from django.conf import settings
 from rest_framework.views import APIView
-from rest_framework.permissions import IsAdminUser,AllowAny
+from rest_framework.permissions import IsAdminUser,AllowAny, IsAuthenticated
 
 
 class RegisterAPIView(APIView):
@@ -76,7 +76,7 @@ class LoginView(APIView):
 
 
 class UserListView(APIView):
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         users = NewUser.objects.all()
@@ -97,7 +97,7 @@ class UserListView(APIView):
 
 
 class UserDetailView(APIView):
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAuthenticated]
 
     def get(self, request, pk):
         try:
