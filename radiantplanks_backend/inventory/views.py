@@ -1,6 +1,7 @@
 from rest_framework import generics, exceptions
 from rest_framework.permissions import IsAuthenticated
-from .models import Category, Product
+from django.db import transaction
+from .models import Invoice, InvoiceItem, Product, Customer
 from .serializers import CategorySerializer, ProductSerializer
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
@@ -8,8 +9,16 @@ from rest_framework.response import Response
 from rest_framework import status
 from .models import Category
 from authentication.models import NewUser
+import traceback
 from django.conf import settings
 import jwt
+from xhtml2pdf import pisa
+from io import BytesIO
+from customers.models import Customer
+from django.utils import timezone
+from django.core.mail import EmailMessage
+from django.template.loader import render_to_string
+import math
 
 # Category Views
 
@@ -378,3 +387,127 @@ class ProductDeleteView(APIView):
         product.save()
 
         return Response({"detail": "Product deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
+
+
+class CreateInvoiceView(APIView):
+    def post(self, request):
+        data = request.data
+        customer_id = data.get("customer_id")
+        items = data.get("items", [])  # List of { product_id, quantity, unit_price, unit_type }
+
+        if not customer_id or not items:
+            return Response({"detail": "Customer ID and items are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            with transaction.atomic():
+                customer = Customer.objects.get(customer_id=customer_id)
+                total_amount = 0
+
+                # Create temporary invoice
+                invoice = Invoice.objects.create(
+                    customer=customer,
+                    date=timezone.now(),
+                    total_amount=total_amount,
+                    created_by=request.user,
+                    is_active=True  # Mark as temporary
+                )
+
+                # Process each item in the invoice
+                for item_data in items:
+                    product = Product.objects.get(id=item_data['product_id'])
+                    quantity = item_data['quantity']
+                    unit_price = item_data['unit_price']
+                    unit_type = item_data['unit_type']  # Can be 'tile', 'box', or 'pallet'
+                    
+                    # Convert quantity to tiles based on the unit type
+                    if unit_type == 'pallet':
+                        quantity_in_tiles = quantity * 55 * 10
+                    elif unit_type == 'box':
+                        quantity_in_tiles = quantity * 10
+                    elif unit_type == 'sqf':
+                        quantity_in_tiles = math.ceil(quantity / 23.33 * 10)  # Calculate approx tiles for sqf
+                    else:
+                        quantity_in_tiles = quantity  # Assume 'tile' is the base unit
+
+                    # Check if enough stock is available
+                    if product.stock_quantity < quantity_in_tiles:
+                        return Response({"detail": f"Insufficient stock for product {product.name}."}, status=status.HTTP_400_BAD_REQUEST)
+
+                    # Deduct stock and calculate the line total
+                    product.stock_quantity -= quantity_in_tiles
+                    product.save()
+                    line_total = unit_price * quantity
+
+                    # Create invoice item
+                    InvoiceItem.objects.create(
+                        invoice=invoice,
+                        product=product,
+                        quantity=quantity,  # Store as selected unit (pallets, boxes, sqf, etc.)
+                        unit_price=unit_price,
+                        created_by=request.user
+                    )
+                    
+                    # Accumulate total amount
+                    total_amount += line_total
+
+                # Update the invoice's total amount after processing all items
+                invoice.total_amount = total_amount
+                invoice.save()
+
+            return Response({"invoice_id": invoice.id, "message": "Invoice created successfully."}, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+
+class SendInvoiceView(APIView):
+    def post(self, request, invoice_id):
+        try:
+            # Fetch the invoice and related items
+            invoice = Invoice.objects.get(id=invoice_id)
+            items = InvoiceItem.objects.filter(invoice=invoice)
+
+            # Prepare data for template rendering
+            items_data = [
+                {
+                    "product": item.product,
+                    "quantity": item.quantity,
+                    "unit_type": "sqf" if item.quantity < 10 else "box",  # Adjust based on your logic
+                    "unit_price": item.unit_price,
+                    "total_price": item.unit_price * item.quantity,
+                }
+                for item in items
+            ]
+            context = {
+                "invoice": invoice,
+                "customer": invoice.customer,
+                "items": items_data,
+            }
+
+            # Render the HTML template
+            html_string = render_to_string("invoice.html", context)
+            
+            # Generate PDF from HTML using xhtml2pdf
+            pdf_file = BytesIO()
+            pisa_status = pisa.CreatePDF(BytesIO(html_string.encode("utf-8")), dest=pdf_file)
+
+            if pisa_status.err:
+                return Response({"detail": "Error creating PDF"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+            # Email setup
+            email = EmailMessage(
+                subject=f"Invoice #{invoice.id}",
+                body="Please find attached your invoice.",
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                to=[invoice.customer.email],
+            )
+            email.attach(f"Invoice_{invoice.id}.pdf", pdf_file.getvalue(), "application/pdf")
+            email.send()
+
+            return Response({"message": "Invoice sent successfully"}, status=status.HTTP_200_OK)
+
+        except Invoice.DoesNotExist:
+            return Response({"detail": "Invoice not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            print(traceback.format_exc())
+            return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

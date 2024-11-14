@@ -6,7 +6,9 @@ from .views import (CategoryListCreateView,
                     ProductCreateView, 
                     ProductListView,
                     ProductUpdateView,
-                    ProductDeleteView)
+                    ProductDeleteView,
+                    CreateInvoiceView,
+                    SendInvoiceView,)
 
 urlpatterns = [
     # Category URLs
@@ -21,4 +23,8 @@ urlpatterns = [
     path('products/create/', ProductCreateView.as_view(), name='product-create'),
     path('products/update/<int:product_id>/', ProductUpdateView.as_view(), name='product-update'),
     path('products/delete/<int:product_id>/', ProductDeleteView.as_view(), name='product-delete'),
+
+    path('invoice/create/', CreateInvoiceView.as_view(), name='invoice-create'),
+    path('invoice/send/<int:invoice_id>/', SendInvoiceView.as_view(), name='invoice-send'),
+    
 ]

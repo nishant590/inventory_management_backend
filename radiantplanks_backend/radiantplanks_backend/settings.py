@@ -69,11 +69,14 @@ REST_FRAMEWORK = {
 
 ROOT_URLCONF = 'radiantplanks_backend.urls'
 
+import os
+BASE_DIR_2 = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
-        'APP_DIRS': True,
+        'DIRS': [os.path.join(BASE_DIR_2, 'templates')],  # For project-wide templates
+        'APP_DIRS': True,  # Enables automatic app-level templates discovery
         'OPTIONS': {
             'context_processors': [
                 'django.template.context_processors.debug',
@@ -84,7 +87,6 @@ TEMPLATES = [
         },
     },
 ]
-
 WSGI_APPLICATION = 'radiantplanks_backend.wsgi.application'
 
 
@@ -163,4 +165,12 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = 'surajmendhe470@gmail.com'
+EMAIL_HOST_PASSWORD = 'gdtc kaku vtqq pkro'
+DEFAULT_FROM_EMAIL = 'surajmendhe470@gmail.com'
 
