@@ -8,6 +8,7 @@ from rest_framework import exceptions
 from django.conf import settings
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAdminUser,AllowAny, IsAuthenticated
+from rest_framework_simplejwt.tokens import RefreshToken
 
 
 class RegisterAPIView(APIView):
@@ -41,6 +42,7 @@ class RegisterAPIView(APIView):
 
 class LoginView(APIView):
     permission_classes = [AllowAny]
+
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -66,9 +68,13 @@ class LoginView(APIView):
             user.last_login_ip = request.META.get('REMOTE_ADDR')
             user.save()
 
-            token = user.generate_jwt(secret_key=settings.SECRET_KEY)
+            # Generate refresh and access tokens
+            refresh = RefreshToken.for_user(user)
+            access = refresh.access_token
+
             return Response({
-                'token': token,
+                'refresh': str(refresh),
+                'access': str(access),
                 'user': UserSerializer(user).data
             })
 
