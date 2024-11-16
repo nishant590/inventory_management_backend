@@ -431,18 +431,18 @@ class CreateInvoiceView(APIView):
 
                     # Check if enough stock is available
                     if product.stock_quantity < quantity_in_tiles:
-                        return Response({"detail": f"Insufficient stock for product {product.name}."}, status=status.HTTP_400_BAD_REQUEST)
+                        return Response({"detail": f"Insufficient stock for product {product.product_name}."}, status=status.HTTP_400_BAD_REQUEST)
 
                     # Deduct stock and calculate the line total
                     product.stock_quantity -= quantity_in_tiles
                     product.save()
-                    line_total = unit_price * quantity
+                    line_total = unit_price * quantity_in_tiles
 
                     # Create invoice item
                     InvoiceItem.objects.create(
                         invoice=invoice,
                         product=product,
-                        quantity=quantity,  # Store as selected unit (pallets, boxes, sqf, etc.)
+                        quantity=quantity_in_tiles,  # Store as selected unit (pallets, boxes, sqf, etc.)
                         unit_price=unit_price,
                         created_by=request.user
                     )
@@ -472,7 +472,7 @@ class SendInvoiceView(APIView):
                 {
                     "product": item.product,
                     "quantity": item.quantity,
-                    "unit_type": "sqf" if item.quantity < 10 else "box",  # Adjust based on your logic
+                    "unit_type": "tiles",  # Adjust based on your logic
                     "unit_price": item.unit_price,
                     "total_price": item.unit_price * item.quantity,
                 }
