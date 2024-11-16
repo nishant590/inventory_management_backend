@@ -1,7 +1,7 @@
 from rest_framework import generics, exceptions
 from rest_framework.permissions import IsAuthenticated
 from django.db import transaction
-from .models import Invoice, InvoiceItem, Product, Customer
+from .models import Invoice, InvoiceItem, Product, Customer, Estimate, EstimateItem
 from .serializers import CategorySerializer, ProductSerializer
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
@@ -510,4 +510,75 @@ class SendInvoiceView(APIView):
             return Response({"detail": "Invoice not found."}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             print(traceback.format_exc())
+            return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class CreateEstimateView(APIView):
+    def post(self, request):
+        data = request.data
+        customer_id = data.get("customer_id")
+        items = data.get("items", [])  # List of { product_id, quantity, unit_price, unit_type }
+
+        if not customer_id or not items:
+            return Response({"detail": "Customer ID and items are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            with transaction.atomic():
+                customer = Customer.objects.get(customer_id=customer_id)
+                total_amount = 0
+
+                # Create temporary invoice
+                estimate = Estimate.objects.create(
+                    customer=customer,
+                    date=timezone.now(),
+                    total_amount=total_amount,
+                    created_by=request.user,
+                    is_active=True  # Mark as temporary
+                )
+
+                # Process each item in the invoice
+                for item_data in items:
+                    product = Product.objects.get(id=item_data['product_id'])
+                    quantity = item_data['quantity']
+                    unit_price = item_data['unit_price']
+                    unit_type = item_data['unit_type']  # Can be 'tile', 'box', or 'pallet'
+                    
+                    # Convert quantity to tiles based on the unit type
+                    if unit_type == 'pallet':
+                        quantity_in_tiles = quantity * 55 * 10
+                    elif unit_type == 'box':
+                        quantity_in_tiles = quantity * 10
+                    elif unit_type == 'sqf':
+                        quantity_in_tiles = math.ceil(quantity / 23.33 * 10)  # Calculate approx tiles for sqf
+                    else:
+                        quantity_in_tiles = quantity  # Assume 'tile' is the base unit
+
+                    # Check if enough stock is available
+                    if product.stock_quantity < quantity_in_tiles:
+                        return Response({"detail": f"Insufficient stock for product {product.name}."}, status=status.HTTP_400_BAD_REQUEST)
+
+                    # Deduct stock and calculate the line total
+                    product.stock_quantity -= quantity_in_tiles
+                    product.save()
+                    line_total = unit_price * quantity
+
+                    # Create invoice item
+                    EstimateItem.objects.create(
+                        estimate=estimate,
+                        product=product,
+                        quantity=quantity,  # Store as selected unit (pallets, boxes, sqf, etc.)
+                        unit_price=unit_price,
+                        created_by=request.user
+                    )
+                    
+                    # Accumulate total amount
+                    total_amount += line_total
+
+                # Update the invoice's total amount after processing all items
+                estimate.total_amount = total_amount
+                estimate.save()
+
+            return Response({"estimate_id": estimate.id, "message": "estimate created successfully."}, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
