@@ -9,6 +9,7 @@ from django.conf import settings
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAdminUser,AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
+import requests
 
 
 class RegisterAPIView(APIView):
@@ -53,33 +54,41 @@ class LoginView(APIView):
         try:
             user = NewUser.objects.get(email=email)
             if not user.check_password(password):
-                user.failed_login_attempts += 1
-                user.last_failed_login = timezone.now()
-                user.save()
                 raise exceptions.AuthenticationFailed('Invalid credentials')
 
             if not user.is_active:
                 raise exceptions.AuthenticationFailed('User is inactive')
 
+            # Capture IP and get geolocation
+            ip_address = request.META.get('REMOTE_ADDR')
+            geo_data = self.get_geolocation(ip_address)
+
             # Update login stats
             user.last_login = timezone.now()
-            user.login_count += 1
-            user.failed_login_attempts = 0
-            user.last_login_ip = request.META.get('REMOTE_ADDR')
+            user.last_login_ip = ip_address
+            user.last_login_city = geo_data.get('city')
+            user.last_login_country = geo_data.get('country')
             user.save()
 
-            # Generate refresh and access tokens
-            refresh = RefreshToken.for_user(user)
-            access = refresh.access_token
-
+            token = RefreshToken.for_user(user)
             return Response({
-                'refresh': str(refresh),
-                'access': str(access),
+                'refresh': str(token),
+                'access': str(token.access_token),
                 'user': UserSerializer(user).data
             })
 
         except NewUser.DoesNotExist:
             raise exceptions.AuthenticationFailed('Invalid credentials')
+
+    def get_geolocation(self, ip):
+        url = f"https://ipinfo.io/{ip}/json"
+        try:
+            response = requests.get(url)
+            if response.status_code == 200:
+                return response.json()
+        except requests.RequestException:
+            pass
+        return {}
 
 
 class UserListView(APIView):

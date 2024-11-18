@@ -23,6 +23,9 @@ class NewGroup(models.Model):
 
 class NewUser(models.Model):
     email = models.EmailField(unique=True)
+    last_login_ip = models.GenericIPAddressField(null=True, blank=True)
+    last_login_city = models.CharField(max_length=100, null=True, blank=True)
+    last_login_country = models.CharField(max_length=100, null=True, blank=True)
     username = models.CharField(max_length=150, unique=True)
     password = models.CharField(max_length=128)  # Will store hashed password
     phone_number = models.CharField(max_length=15, null=True, blank=True)
