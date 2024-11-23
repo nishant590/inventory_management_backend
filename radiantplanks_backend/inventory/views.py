@@ -379,13 +379,13 @@ class ProductUpdateView(APIView):
             return quantity * 55  # 550 tiles per pallet
         return None
 
-    def patch(self, request, pk):
+    def patch(self, request, product_id):
         user = self.get_user_from_token(request)
         if not user:
             return Response({"detail": "Invalid or expired token."}, status=status.HTTP_401_UNAUTHORIZED)
 
         try:
-            product = Product.objects.get(id=pk, is_active=True)
+            product = Product.objects.get(id=product_id, is_active=True)
         except Product.DoesNotExist:
             return Response({"detail": "Product not found."}, status=status.HTTP_404_NOT_FOUND)
 
