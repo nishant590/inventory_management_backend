@@ -27,7 +27,7 @@ class Product(models.Model):
     product_name = models.CharField(max_length=255)
     sku = models.CharField(max_length=100, unique=True, null=True, blank=True)
     barcode = models.CharField(max_length=100, unique=True, null=True, blank=True)
-    category = models.ForeignKey(Category, related_name='products', on_delete=models.CASCADE, null=True, blank=True)
+    category_id = models.ForeignKey(Category, related_name='products', on_delete=models.CASCADE, null=True, blank=True)
     # subcategory = models.CharField(max_length=255, null=True, blank=True)  # Optional subcategory
     purchase_description = models.TextField(null=True, blank=True)
     sell_description = models.TextField(null=True, blank=True)

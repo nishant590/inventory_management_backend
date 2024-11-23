@@ -206,7 +206,7 @@ class ProductListView(APIView):
             {
                 "id": product.id,
                 "product_name": product.product_name,
-                "category": product.category.name if product.category else None,
+                "category": product.category_id.name if product.category_id else None,
                 "price": str(product.selling_price),
                 "stock_quantity": product.stock_quantity,
                 "created_date": product.created_date,
@@ -295,7 +295,7 @@ class ProductCreateView(APIView):
         subcategory = None
         if category_id:
             try:
-                category = Category.objects.get(id=category_id)
+                category_id = Category.objects.get(id=category_id)
             except Category.DoesNotExist:
                 return Response({"detail": "Category not found."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -323,7 +323,7 @@ class ProductCreateView(APIView):
             product_name = product_name, 
             sku = sku, 
             barcode = barcode, 
-            category = category, 
+            category_id = category_id, 
             purchase_description = purchase_description, 
             sell_description = sell_description, 
             stock_quantity = stock_quantity, 
@@ -413,7 +413,7 @@ class ProductUpdateView(APIView):
         product.product_name = data.get("product_name", product.product_name)
         product.sku = data.get("sku", product.sku)
         product.barcode = data.get("barcode", product.barcode)
-        product.category = data.get("category_id", product.category)
+        product.category_id = data.get("category_id", product.category_id)
         product.sell_description = data.get("sell_description", product.sell_description)
         product.purchase_description = data.get("purchase_description", product.purchase_description)
         product.stock_quantity = data.get("stock_quantity", product.stock_quantity)
@@ -457,13 +457,13 @@ class ProductRetrieveView(APIView):
         except (jwt.ExpiredSignatureError, jwt.DecodeError, NewUser.DoesNotExist):
             return None
 
-    def get(self, request, pk):
+    def get(self, request, product_id):
         user = self.get_user_from_token(request)
         if not user:
             return Response({"detail": "Invalid or expired token."}, status=status.HTTP_401_UNAUTHORIZED)
 
         try:
-            product = Product.objects.get(id=pk, is_active=True)
+            product = Product.objects.get(id=product_id, is_active=True)
         except Product.DoesNotExist:
             return Response({"detail": "Product not found."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -472,7 +472,7 @@ class ProductRetrieveView(APIView):
             "product_name": product.product_name,
             "sku": product.sku,
             "barcode": product.barcode,
-            "category_id": product.category.id if product.category else None,
+            "category_id": product.category_id.id if product.category_id else None,
             "sell_description": product.sell_description,
             "purchase_description": product.purchase_description,
             "stock_quantity": product.stock_quantity,
