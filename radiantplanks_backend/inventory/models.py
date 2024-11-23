@@ -36,7 +36,7 @@ class Product(models.Model):
     stock_quantity = models.PositiveIntegerField(default=0, null=True, blank=True)
     reorder_level = models.PositiveIntegerField(default=0, null=True, blank=True)
     batch_lot_number = models.CharField(max_length=100, null=True, blank=True)
-    as_on_date = models.DateField(default=now, blank=True)
+    as_on_date = models.DateField(default=now, blank=True, null=True)
     tile_length = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)  # For tile dimensions
     tile_width = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     no_of_tiles = models.PositiveIntegerField(default=0, null=True, blank=True)
