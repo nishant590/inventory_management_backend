@@ -207,7 +207,7 @@ class ProductListView(APIView):
                 "id": product.id,
                 "product_name": product.product_name,
                 "category": product.category.name if product.category else None,
-                "price": str(product.price),
+                "price": str(product.selling_price),
                 "stock_quantity": product.stock_quantity,
                 "created_date": product.created_date,
                 "updated_date": product.updated_date,
@@ -261,6 +261,7 @@ class ProductCreateView(APIView):
         quantity = data.get("quantity")
         unit = data.get("unit")
         reorder_level = data.get("reorder_level")
+        as_on_date = data.get("as_on_date")
         batch_lot_number = data.get("batch_lot_number")
         tile_length = data.get("tile_length")
         tile_width = data.get("tile_width")
@@ -299,6 +300,8 @@ class ProductCreateView(APIView):
                 return Response({"detail": "Category not found."}, status=status.HTTP_404_NOT_FOUND)
 
         # Calculate stock quantity for products
+        tile_area = self.calculate_area(float(tile_length), float(tile_width), int(no_of_tiles))
+
         stock_quantity = None
         if product_type == "product":
             stock_quantity = self.calculate_stock_quantity(quantity, unit)
@@ -307,7 +310,6 @@ class ProductCreateView(APIView):
                                 status=status.HTTP_400_BAD_REQUEST)
 
         # Calculate tile area
-        tile_area = self.calculate_area(float(tile_length), float(tile_width), int(no_of_tiles))
 
         # Prevent duplicate product names
         if Product.objects.filter(product_name=product_name, is_active=True).exists():
@@ -329,6 +331,7 @@ class ProductCreateView(APIView):
             batch_lot_number = batch_lot_number, 
             tile_length = tile_length, 
             tile_width = tile_width, 
+            as_on_date = as_on_date,
             no_of_tiles = no_of_tiles,
             tile_area = tile_area,
             purchase_price = purchase_price, 
@@ -364,6 +367,18 @@ class ProductUpdateView(APIView):
         except (jwt.ExpiredSignatureError, jwt.DecodeError, NewUser.DoesNotExist):
             return None
 
+    def calculate_area(self, length, width, no_of_tiles):
+        area = length * width * no_of_tiles
+        area = round(area, 2)
+        return area
+
+    def calculate_stock_quantity(self, quantity=None, unit=None):
+        if unit == "box":
+            return quantity * 1  # 10 tiles per box
+        elif unit == "pallet":
+            return quantity * 55  # 550 tiles per pallet
+        return None
+
     def patch(self, request, pk):
         user = self.get_user_from_token(request)
         if not user:
@@ -376,19 +391,39 @@ class ProductUpdateView(APIView):
 
         data = request.data
         product_image = request.FILES.get("product_image")
+        product_type = data.get("product_type")
+        tile_length = data.get("tile_length", product.tile_length)
+        tile_width = data.get("tile_width", product.tile_width)
+        no_of_tiles = data.get("no_of_tiles", product.no_of_tiles)
+        quantity = data.get("quantity", product.stock_quantity)
+        unit = data.get("unit")
+        tile_area = product.tile_area
+        if unit:
+            tile_area = self.calculate_area(float(tile_length), float(tile_width), int(no_of_tiles))
+        
+            stock_quantity = None
+            if product_type == "product":
+                stock_quantity = self.calculate_stock_quantity(quantity, unit)
+                if stock_quantity is None:
+                    return Response({"detail": "Provide either box_quantity or pallet_quantity."},
+                                    status=status.HTTP_400_BAD_REQUEST)
+
 
         # Update fields if provided
         product.product_name = data.get("product_name", product.product_name)
         product.sku = data.get("sku", product.sku)
         product.barcode = data.get("barcode", product.barcode)
-        product.category_id = data.get("category_id", product.category_id)
-        product.subcategory_id = data.get("subcategory_id", product.subcategory_id)
-        product.description = data.get("description", product.description)
+        product.category = data.get("category_id", product.category)
+        product.sell_description = data.get("sell_description", product.sell_description)
+        product.purchase_description = data.get("purchase_description", product.purchase_description)
         product.stock_quantity = data.get("stock_quantity", product.stock_quantity)
         product.reorder_level = data.get("reorder_level", product.reorder_level)
         product.batch_lot_number = data.get("batch_lot_number", product.batch_lot_number)
+        product.as_on_date = data.get("as_on_date", product.as_on_date)
         product.tile_length = data.get("tile_length", product.tile_length)
         product.tile_width = data.get("tile_width", product.tile_width)
+        product.no_of_tiles = data.get("no_of_tiles", product.no_of_tiles)
+        product.tile_area = tile_area
         product.purchase_price = data.get("purchase_price", product.purchase_price)
         product.selling_price = data.get("selling_price", product.selling_price)
         product.specifications = data.get("specifications", product.specifications)
@@ -438,14 +473,16 @@ class ProductRetrieveView(APIView):
             "sku": product.sku,
             "barcode": product.barcode,
             "category_id": product.category.id if product.category else None,
-            "subcategory_id": product.subcategory.id if product.subcategory else None,
-            "description": product.description,
+            "sell_description": product.sell_description,
+            "purchase_description": product.purchase_description,
             "stock_quantity": product.stock_quantity,
             "reorder_level": product.reorder_level,
             "batch_lot_number": product.batch_lot_number,
             "tile_length": product.tile_length,
             "tile_width": product.tile_width,
             "tile_area": product.tile_area,
+            "no_of_tiles": product.no_of_tiles,
+            "as_on_date": product.as_on_date,
             "purchase_price": product.purchase_price,
             "selling_price": product.selling_price,
             "specifications": product.specifications,
@@ -554,7 +591,7 @@ class ProductDeleteView(APIView):
             return Response({"detail": "Invalid or expired token."}, status=status.HTTP_401_UNAUTHORIZED)
 
         try:
-            product = Product.objects.get(id=product_id, created_by=user)
+            product = Product.objects.get(id=product_id, is_active=True)
         except Product.DoesNotExist:
             return Response({"detail": "Product not found."}, status=status.HTTP_404_NOT_FOUND)
 
