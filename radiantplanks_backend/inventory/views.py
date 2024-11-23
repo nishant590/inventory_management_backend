@@ -9,8 +9,11 @@ from rest_framework.response import Response
 from rest_framework import status
 from .models import Category
 from authentication.models import NewUser
+import posixpath
+from django.core.files.storage import FileSystemStorage
 import traceback
 from django.conf import settings
+import os
 import jwt
 from xhtml2pdf import pisa
 from io import BytesIO
@@ -19,8 +22,17 @@ from django.utils import timezone
 from django.core.mail import EmailMessage
 from django.template.loader import render_to_string
 import math
-
+import uuid
+import time
 # Category Views
+
+def generate_short_unique_filename(extension):
+    # Shortened UUID (6 characters) + Unix timestamp for uniqueness
+    unique_id = uuid.uuid4().hex[:6]  # Get the first 6 characters of UUID
+    timestamp = str(int(time.time()))  # Unix timestamp as a string
+    return f"{unique_id}_{timestamp}{extension}"
+
+
 
 class CategoryListCreateView(APIView):
     permission_classes = [IsAuthenticated]
@@ -219,66 +231,121 @@ class ProductCreateView(APIView):
         except (jwt.ExpiredSignatureError, jwt.DecodeError, NewUser.DoesNotExist):
             return None
 
+    def calculate_area(self, length, width, no_of_tiles):
+        area = length * width * no_of_tiles
+        area = round(area, 2)
+        return area
 
-    def calculate_tiles(self, box_quantity=None, area_sqf=None, pallet_quantity=None, tile_quantity=None):
-        if box_quantity:
-            return box_quantity * 10  # 10 tiles per box
-        elif area_sqf:
-            return int(area_sqf / 23.33)  # Calculate tiles from sqf
-        elif pallet_quantity:
-            return pallet_quantity * 550  # 550 tiles per pallet
-        elif tile_quantity:
-            return tile_quantity  # Direct tile count
+    def calculate_stock_quantity(self, quantity=None, unit=None):
+        if unit == "box":
+            return quantity * 1  # 10 tiles per box
+        elif unit == "pallet":
+            return quantity * 55  # 550 tiles per pallet
         return None
-    
+
     def post(self, request):
         user = self.get_user_from_token(request)
         if not user:
             return Response({"detail": "Invalid or expired token."}, status=status.HTTP_401_UNAUTHORIZED)
 
-        category_id = request.data.get("category_id")
-        product_name = request.data.get("product_name")
-        price = request.data.get("price")
-        box_quantity = request.data.get("box_quantity")
-        area_sqf = request.data.get("area_sqf")
-        pallet_quantity = request.data.get("pallet_quantity")
-        tile_quantity = request.data.get("tile_quantity")
+        data = request.data
+        product_image = request.FILES.get("product_image")
+        # Extract fields
+        product_type = data.get("product_type")  # 'product' or 'service'
+        category_id = data.get("category_id")
+        product_name = data.get("product_name")
+        sku = data.get("sku")
+        purchase_description = data.get("purchase_description")
+        sell_description = data.get("sell_description")
+        barcode = data.get("barcode")
+        quantity = data.get("quantity")
+        unit = data.get("unit")
+        reorder_level = data.get("reorder_level")
+        batch_lot_number = data.get("batch_lot_number")
+        tile_length = data.get("tile_length")
+        tile_width = data.get("tile_width")
+        no_of_tiles = data.get("no_of_tiles")
+        purchase_price = data.get("purchase_price")
+        selling_price = data.get("selling_price")
+        specifications = data.get("specifications")  # Expect JSON
+        tags = data.get("tags")  # Comma-separated string
 
-        if not category_id or not product_name or price is None:
-            return Response({"detail": "All fields are required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Check if category exists
-        try:
-            category = Category.objects.get(id=category_id)
-        except Category.DoesNotExist:
-            return Response({"detail": "Category not found."}, status=status.HTTP_404_NOT_FOUND)
+        if not product_name or not selling_price or not product_type:
+            return Response({"detail": "Product type, name, and selling_price are required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Calculate stock quantity based on provided input type
-        stock_quantity = self.calculate_tiles(box_quantity, area_sqf, pallet_quantity, tile_quantity)
+        if product_image:
+            extension = os.path.splitext(product_image.name)[1]  # Get the file extension
+            short_unique_filename = generate_short_unique_filename(extension)
+            fs = FileSystemStorage(location=os.path.join(settings.STATIC_ROOT, 'product_images'))
+            logo_path = fs.save(short_unique_filename, product_image)
+            logo_url = posixpath.join('static/product_images', logo_path)
+        else:
+            logo_url = ""
+
+        if product_type == "product" and not category_id:
+            return Response({"detail": "Category is required for products."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not tile_length or not tile_width:
+            return Response({"detail": "Tile length and width are required to calculate the area."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validate category and subcategory
+        category = None
+        subcategory = None
+        if category_id:
+            try:
+                category = Category.objects.get(id=category_id)
+            except Category.DoesNotExist:
+                return Response({"detail": "Category not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Calculate stock quantity for products
+        stock_quantity = None
+        if product_type == "product":
+            stock_quantity = self.calculate_stock_quantity(quantity, unit)
+            if stock_quantity is None:
+                return Response({"detail": "Provide either box_quantity or pallet_quantity."},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+        # Calculate tile area
+        tile_area = self.calculate_area(float(tile_length), float(tile_width), int(no_of_tiles))
+
+        # Prevent duplicate product names
+        if Product.objects.filter(product_name=product_name, is_active=True).exists():
+            return Response({"detail": "Product with this name already exists."}, status=status.HTTP_400_BAD_REQUEST)
         
-        if stock_quantity is None:
-            return Response({"detail": "Provide either box_quantity, area_sqf, pallet_quantity, or tile_quantity."}, 
-                            status=status.HTTP_400_BAD_REQUEST)
+        if Product.objects.filter(sku=sku, is_active=True).exists():
+            return Response({"detail": "Product with this SKU already exists."}, status=status.HTTP_400_BAD_REQUEST)
 
-        if_exists = Product.objects.filter(product_name=product_name, is_active=True).all()
-        if if_exists:
-            return Response({"detail": "Product already present."}, status=status.HTTP_400_BAD_REQUEST)      
-
-
-        # Create the Product instance
+        # Create product/service
         product = Product.objects.create(
-            category=category,
-            product_name=product_name,
-            price=price,
-            stock_quantity=stock_quantity,
-            created_by=user
+            product_name = product_name, 
+            sku = sku, 
+            barcode = barcode, 
+            category = category, 
+            purchase_description = purchase_description, 
+            sell_description = sell_description, 
+            stock_quantity = stock_quantity, 
+            reorder_level = reorder_level, 
+            batch_lot_number = batch_lot_number, 
+            tile_length = tile_length, 
+            tile_width = tile_width, 
+            no_of_tiles = no_of_tiles,
+            tile_area = tile_area,
+            purchase_price = purchase_price, 
+            selling_price = selling_price, 
+            specifications = specifications, 
+            tags = tags, 
+            images = logo_url, 
+            created_by = user, 
         )
 
         return Response({
             "id": product.id,
             "product_name": product.product_name,
-            "price": str(product.price),
+            "product_type": product.product_type,
+            "price": str(product.selling_price),
             "stock_quantity": product.stock_quantity,
+            "tile_area": product.tile_area,
             "created_date": product.created_date,
             "is_active": product.is_active,
         }, status=status.HTTP_201_CREATED)
@@ -297,66 +364,175 @@ class ProductUpdateView(APIView):
         except (jwt.ExpiredSignatureError, jwt.DecodeError, NewUser.DoesNotExist):
             return None
 
-
-    def calculate_tiles(self, box_quantity=None, area_sqf=None, pallet_quantity=None, tile_quantity=None):
-        if box_quantity:
-            return box_quantity * 10  # 10 tiles per box
-        elif area_sqf:
-            return int(area_sqf / 23.33)  # Calculate tiles from sqf
-        elif pallet_quantity:
-            return pallet_quantity * 550  # 550 tiles per pallet
-        elif tile_quantity:
-            return tile_quantity  # Direct tile count
-        return None
-    
-
-    def put(self, request, product_id):
+    def patch(self, request, pk):
         user = self.get_user_from_token(request)
         if not user:
             return Response({"detail": "Invalid or expired token."}, status=status.HTTP_401_UNAUTHORIZED)
 
         try:
-            product = Product.objects.get(id=product_id, is_active=True)
+            product = Product.objects.get(id=pk, is_active=True)
         except Product.DoesNotExist:
             return Response({"detail": "Product not found."}, status=status.HTTP_404_NOT_FOUND)
 
+        data = request.data
+        product_image = request.FILES.get("product_image")
+
         # Update fields if provided
-        product_name = request.data.get("product_name")
-        price = request.data.get("price")
-        box_quantity = request.data.get("box_quantity")
-        area_sqf = request.data.get("area_sqf")
-        pallet_quantity = request.data.get("pallet_quantity")
-        tile_quantity = request.data.get("tile_quantity")
+        product.product_name = data.get("product_name", product.product_name)
+        product.sku = data.get("sku", product.sku)
+        product.barcode = data.get("barcode", product.barcode)
+        product.category_id = data.get("category_id", product.category_id)
+        product.subcategory_id = data.get("subcategory_id", product.subcategory_id)
+        product.description = data.get("description", product.description)
+        product.stock_quantity = data.get("stock_quantity", product.stock_quantity)
+        product.reorder_level = data.get("reorder_level", product.reorder_level)
+        product.batch_lot_number = data.get("batch_lot_number", product.batch_lot_number)
+        product.tile_length = data.get("tile_length", product.tile_length)
+        product.tile_width = data.get("tile_width", product.tile_width)
+        product.purchase_price = data.get("purchase_price", product.purchase_price)
+        product.selling_price = data.get("selling_price", product.selling_price)
+        product.specifications = data.get("specifications", product.specifications)
+        product.tags = data.get("tags", product.tags)
 
-        stock_quantity = self.calculate_tiles(box_quantity, area_sqf, pallet_quantity, tile_quantity)
-        
-        if stock_quantity is None:
-            return Response({"detail": "Provide either box_quantity, area_sqf, pallet_quantity, or tile_quantity."}, 
-                            status=status.HTTP_400_BAD_REQUEST)
+        if product_image:
+            extension = os.path.splitext(product_image.name)[1]  # Get the file extension
+            short_unique_filename = generate_short_unique_filename(extension)
+            fs = FileSystemStorage(location=os.path.join(settings.STATIC_ROOT, 'product_images'))
+            logo_path = fs.save(short_unique_filename, product_image)
+            logo_url = posixpath.join('static/product_images', logo_path)
+            product.images = logo_url
 
-        if_same_name = Product.objects.filter(product_name=product_name, is_active=True).exclude(id=product_id).all()
-        if if_same_name:
-            return Response({"detail": "Product name already present."}, status=status.HTTP_400_BAD_REQUEST)
-
-
-        if product_name:
-            product.product_name = product_name
-        if price is not None:
-            product.price = price
-        if stock_quantity is not None:
-            product.stock_quantity = stock_quantity
-
+        # Save updated product
         product.updated_by = user
         product.save()
 
-        return Response({
+        return Response({"detail": "Product updated successfully."}, status=status.HTTP_200_OK)
+
+
+class ProductRetrieveView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get_user_from_token(self, request):
+        token = request.headers.get("Authorization", "").split(" ")[1]
+        try:
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+            user_id = payload.get("user_id")
+            user = NewUser.objects.get(id=user_id)
+            return user
+        except (jwt.ExpiredSignatureError, jwt.DecodeError, NewUser.DoesNotExist):
+            return None
+
+    def get(self, request, pk):
+        user = self.get_user_from_token(request)
+        if not user:
+            return Response({"detail": "Invalid or expired token."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            product = Product.objects.get(id=pk, is_active=True)
+        except Product.DoesNotExist:
+            return Response({"detail": "Product not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        product_data = {
             "id": product.id,
             "product_name": product.product_name,
-            "price": str(product.price),  # Convert Decimal to string for JSON compatibility
+            "sku": product.sku,
+            "barcode": product.barcode,
+            "category_id": product.category.id if product.category else None,
+            "subcategory_id": product.subcategory.id if product.subcategory else None,
+            "description": product.description,
             "stock_quantity": product.stock_quantity,
+            "reorder_level": product.reorder_level,
+            "batch_lot_number": product.batch_lot_number,
+            "tile_length": product.tile_length,
+            "tile_width": product.tile_width,
+            "tile_area": product.tile_area,
+            "purchase_price": product.purchase_price,
+            "selling_price": product.selling_price,
+            "specifications": product.specifications,
+            "tags": product.tags,
+            "images": product.images,
+            "created_date": product.created_date,
             "updated_date": product.updated_date,
             "is_active": product.is_active,
-        }, status=status.HTTP_200_OK)
+        }
+
+        return Response(product_data, status=status.HTTP_200_OK)
+
+
+
+# class ProductUpdateView(APIView):
+#     permission_classes = [IsAuthenticated]
+
+#     def get_user_from_token(self, request):
+#         token = request.headers.get("Authorization", "").split(" ")[1]
+#         try:
+#             payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+#             user_id = payload.get("user_id")
+#             user = NewUser.objects.get(id=user_id)
+#             return user
+#         except (jwt.ExpiredSignatureError, jwt.DecodeError, NewUser.DoesNotExist):
+#             return None
+
+
+#     def calculate_tiles(self, box_quantity=None, area_sqf=None, pallet_quantity=None, tile_quantity=None):
+#         if box_quantity:
+#             return box_quantity * 10  # 10 tiles per box
+#         elif area_sqf:
+#             return int(area_sqf / 23.33)  # Calculate tiles from sqf
+#         elif pallet_quantity:
+#             return pallet_quantity * 550  # 550 tiles per pallet
+#         elif tile_quantity:
+#             return tile_quantity  # Direct tile count
+#         return None
+    
+
+#     def put(self, request, product_id):
+#         user = self.get_user_from_token(request)
+#         if not user:
+#             return Response({"detail": "Invalid or expired token."}, status=status.HTTP_401_UNAUTHORIZED)
+
+#         try:
+#             product = Product.objects.get(id=product_id, is_active=True)
+#         except Product.DoesNotExist:
+#             return Response({"detail": "Product not found."}, status=status.HTTP_404_NOT_FOUND)
+
+#         # Update fields if provided
+#         product_name = request.data.get("product_name")
+#         price = request.data.get("price")
+#         box_quantity = request.data.get("box_quantity")
+#         area_sqf = request.data.get("area_sqf")
+#         pallet_quantity = request.data.get("pallet_quantity")
+#         tile_quantity = request.data.get("tile_quantity")
+
+#         stock_quantity = self.calculate_tiles(box_quantity, area_sqf, pallet_quantity, tile_quantity)
+        
+#         if stock_quantity is None:
+#             return Response({"detail": "Provide either box_quantity, area_sqf, pallet_quantity, or tile_quantity."}, 
+#                             status=status.HTTP_400_BAD_REQUEST)
+
+#         if_same_name = Product.objects.filter(product_name=product_name, is_active=True).exclude(id=product_id).all()
+#         if if_same_name:
+#             return Response({"detail": "Product name already present."}, status=status.HTTP_400_BAD_REQUEST)
+
+
+#         if product_name:
+#             product.product_name = product_name
+#         if price is not None:
+#             product.price = price
+#         if stock_quantity is not None:
+#             product.stock_quantity = stock_quantity
+
+#         product.updated_by = user
+#         product.save()
+
+#         return Response({
+#             "id": product.id,
+#             "product_name": product.product_name,
+#             "price": str(product.price),  # Convert Decimal to string for JSON compatibility
+#             "stock_quantity": product.stock_quantity,
+#             "updated_date": product.updated_date,
+#             "is_active": product.is_active,
+#         }, status=status.HTTP_200_OK)
 
 
 class ProductDeleteView(APIView):
@@ -485,7 +661,7 @@ class SendInvoiceView(APIView):
             }
 
             # Render the HTML template
-            html_string = render_to_string("invoice.html", context)
+            html_string = render_to_string("invoices2.html", context)
             
             # Generate PDF from HTML using xhtml2pdf
             pdf_file = BytesIO()

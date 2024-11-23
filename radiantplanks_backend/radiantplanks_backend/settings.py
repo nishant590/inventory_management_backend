@@ -27,7 +27,7 @@ SECRET_KEY = 'django-insecure-k0&f$2cj+%=m3%lt-prd81clocc$_rcsqu0+2ui@ust4bm!qv+
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ["gn5918857.pythonanywhere.com"]
+ALLOWED_HOSTS = ["gn5918857.pythonanywhere.com","127.0.0.1"]
 
 
 # Application definition
@@ -56,6 +56,10 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
+PLAID_CLIENT_ID = "673f00be0203ee001a70d41c"
+PLAID_SECRET = "5358ac364c20f629d50fcd7cb2018d"
+PLAID_ENV = "sandbox" 
 
 # REST Framework settings
 REST_FRAMEWORK = {
@@ -160,6 +164,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'static')
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
