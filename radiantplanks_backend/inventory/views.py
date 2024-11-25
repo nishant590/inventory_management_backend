@@ -409,7 +409,7 @@ class ProductUpdateView(APIView):
                                     status=status.HTTP_400_BAD_REQUEST)
         
         category_id = data.get("category_id")
-        if category_id:
+        if category_id != product.category_id:
             try:
                 category_id = Category.objects.get(id=category_id)
             except Category.DoesNotExist:
@@ -421,7 +421,7 @@ class ProductUpdateView(APIView):
         product.product_name = data.get("product_name", product.product_name)
         product.sku = data.get("sku", product.sku)
         product.barcode = data.get("barcode", product.barcode)
-        product.category_id = data.get("category_id", product.category_id)
+        product.category_id = category_id
         product.sell_description = data.get("sell_description", product.sell_description)
         product.purchase_description = data.get("purchase_description", product.purchase_description)
         product.stock_quantity = data.get("stock_quantity", product.stock_quantity)
