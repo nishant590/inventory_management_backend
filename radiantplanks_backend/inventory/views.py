@@ -407,8 +407,16 @@ class ProductUpdateView(APIView):
                 if stock_quantity is None:
                     return Response({"detail": "Provide either box_quantity or pallet_quantity."},
                                     status=status.HTTP_400_BAD_REQUEST)
-
-
+        
+        category_id = data.get("category_id")
+        if category_id:
+            try:
+                category_id = Category.objects.get(id=category_id)
+            except Category.DoesNotExist:
+                return Response({"detail": "Category not found."}, status=status.HTTP_404_NOT_FOUND)
+        else:
+            category_id = product.category_id
+        
         # Update fields if provided
         product.product_name = data.get("product_name", product.product_name)
         product.sku = data.get("sku", product.sku)
