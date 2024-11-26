@@ -12,11 +12,14 @@ class Customer(models.Model):
     company = models.CharField(max_length=100, blank=True, null=True)
     email = models.EmailField(unique=True)
     phone = models.CharField(max_length=15)
+    # payments = models.CharField(max_length=20, choices=[('cash', 'Cash'), ('check', 'Check'),('credit card','Credit Card')], default="cash")
+    # taxes = models.CharField(max_length=150)
     created_by = models.ForeignKey(NewUser, on_delete=models.SET_NULL, related_name='customer_created_by', null=True)
     created_date = models.DateTimeField(auto_now_add=True)
     updated_by = models.ForeignKey(NewUser, on_delete=models.SET_NULL, related_name='customer_updated_by', null=True)
     updated_date = models.DateTimeField(auto_now=True)
     is_active = models.BooleanField(default=True)
+
 
     def __str__(self):
         return self.display_name
@@ -65,3 +68,4 @@ class VendorAddress(models.Model):
 
     def __str__(self):
         return f"{self.address_type.capitalize()} Address for {self.vendor.display_name}"
+

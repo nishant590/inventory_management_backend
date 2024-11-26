@@ -3,6 +3,17 @@ from authentication.models import NewUser
 from customers.models import Customer, Vendor
 from django.utils import timezone
 from django.utils.timezone import now
+from accounts.models import Account
+
+class Tag(models.Model):
+    name = models.CharField(max_length=50, unique=True)  # Tag name
+    created_by = models.ForeignKey(NewUser, on_delete=models.CASCADE, related_name="tags_created")
+    created_date = models.DateTimeField(auto_now_add=True)
+    is_active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return self.name
+
 
 class Category(models.Model):
     name = models.CharField(max_length=255, unique=True)
@@ -62,17 +73,35 @@ class Product(models.Model):
 
     def __str__(self):
         return self.item_name
+    
+
+class ProductAccountMapping(models.Model):
+    product = models.OneToOneField(Product, on_delete=models.CASCADE, related_name='account_mapping')
+    inventory_account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name='inventory_mappings')
+    income_account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name='income_mappings')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Mapping for {self.product.product_name}"
 
 
 class Invoice(models.Model):
     customer = models.ForeignKey(Customer, on_delete=models.CASCADE)
-    date = models.DateTimeField(default=timezone.now)
+    customer_email = models.CharField(max_length=100, null=True)
+    customer_email_cc = models.CharField(max_length=255, null=True, blank=True)  # For CC/BCC
+    customer_email_bcc = models.CharField(max_length=255, null=True, blank=True)
+    billing_address = models.TextField(null=True, blank=True)  # Billing address
+    tags = models.CharField(max_length=255, null=True, blank=True)  # Tags field
+    terms = models.TextField(null=True, blank=True)  # Terms field
+    bill_date = models.DateTimeField(default=timezone.now)  # Redundant, could be removed
+    due_date = models.DateTimeField(default=timezone.now)  # Due date
+    # invoice_number = models.CharField(max_length=50, unique=True)  # Invoice num
+    message_on_invoice = models.TextField(null=True, blank=True)  # Message on invoice
+    message_on_statement = models.TextField(null=True, blank=True)  # Message on statement
     sum_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
     tax_percentage = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
     total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
-    bill_date = models.DateTimeField(default=timezone.now )
-    due_date = models.DateTimeField(default=timezone.now )
-    message = models.CharField(max_length=100, null=True)
     is_paid = models.BooleanField(default=False)
     created_by = models.ForeignKey(NewUser, on_delete=models.CASCADE, related_name="invoice_created_by")
     created_date = models.DateTimeField(default=timezone.now)
@@ -81,7 +110,28 @@ class Invoice(models.Model):
     is_active = models.BooleanField(default=True)
 
     def __str__(self):
-        return f"Invoice {self.id} - Customer {self.customer_id} - Total {self.total_amount}"
+        return f"Invoice {self.invoice_number} - Customer {self.customer} - Total {self.total_amount}"
+
+
+# class Invoice(models.Model):
+#     customer = models.ForeignKey(Customer, on_delete=models.CASCADE)
+#     customer_email = models.CharField(max_length=100, null=True)
+#     date = models.DateTimeField(default=timezone.now)
+#     sum_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
+#     tax_percentage = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
+#     total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
+#     bill_date = models.DateTimeField(default=timezone.now )
+#     due_date = models.DateTimeField(default=timezone.now )
+#     message = models.CharField(max_length=100, null=True)
+#     is_paid = models.BooleanField(default=False)
+#     created_by = models.ForeignKey(NewUser, on_delete=models.CASCADE, related_name="invoice_created_by")
+#     created_date = models.DateTimeField(default=timezone.now)
+#     updated_by = models.ForeignKey(NewUser, on_delete=models.CASCADE, related_name="invoice_updated_by", null=True)
+#     updated_date = models.DateTimeField(null=True, blank=True)
+#     is_active = models.BooleanField(default=True)
+
+#     def __str__(self):
+#         return f"Invoice {self.id} - Customer {self.customer_id} - Total {self.total_amount}"
 
 
 class InvoiceItem(models.Model):
@@ -89,7 +139,8 @@ class InvoiceItem(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     description = models.CharField(max_length=100, null=True)
     quantity = models.IntegerField()
-    unit_price = models.DecimalField(max_digits=10, decimal_places=2)
+    unit_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
+    amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
     created_by = models.ForeignKey(NewUser, on_delete=models.CASCADE, related_name="invoiceitem_created_by")
     created_date = models.DateTimeField(default=timezone.now)
     updated_by = models.ForeignKey(NewUser, on_delete=models.CASCADE, related_name="invoiceitem_updated_by", null=True)

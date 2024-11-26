@@ -1,7 +1,7 @@
 from rest_framework import generics, exceptions
 from rest_framework.permissions import IsAuthenticated
 from django.db import transaction
-from .models import Invoice, InvoiceItem, Product, Customer, Estimate, EstimateItem
+from .models import Invoice, InvoiceItem, Product, Customer, Estimate, EstimateItem, ProductAccountMapping
 from .serializers import CategorySerializer, ProductSerializer
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from .models import Category
 from authentication.models import NewUser
+from accounts.models import Account
 import posixpath
 from django.core.files.storage import FileSystemStorage
 import traceback
@@ -32,6 +33,9 @@ def generate_short_unique_filename(extension):
     timestamp = str(int(time.time()))  # Unix timestamp as a string
     return f"{unique_id}_{timestamp}{extension}"
 
+
+def add_inventory_value(stock_quantity, stock_price):
+    pass
 
 
 class CategoryListCreateView(APIView):
@@ -270,6 +274,8 @@ class ProductCreateView(APIView):
         selling_price = data.get("selling_price")
         specifications = data.get("specifications")  # Expect JSON
         tags = data.get("tags")  # Comma-separated string
+        inventory_account = data.get("inventory_account")
+        income_account = data.get("income_account")
 
 
         if not product_name or not selling_price or not product_type:
@@ -287,9 +293,11 @@ class ProductCreateView(APIView):
         if product_type == "product" and not category_id:
             return Response({"detail": "Category is required for products."}, status=status.HTTP_400_BAD_REQUEST)
 
-        if not tile_length or not tile_width:
-            return Response({"detail": "Tile length and width are required to calculate the area."}, status=status.HTTP_400_BAD_REQUEST)
+        if product_type == "product" and not tile_length or not tile_width or not no_of_tiles:
+            return Response({"detail": "Tile length and width and number of tiles are required to calculate the area."}, status=status.HTTP_400_BAD_REQUEST)
 
+        if product_type == "product" and not inventory_account or not income_account:
+            return Response({"detail": "Inventory and Income account are required."}, status=status.HTTP_400_BAD_REQUEST)
         # Validate category and subcategory
         category = None
         subcategory = None
@@ -308,6 +316,7 @@ class ProductCreateView(APIView):
             if stock_quantity is None:
                 return Response({"detail": "Provide either box_quantity or pallet_quantity."},
                                 status=status.HTTP_400_BAD_REQUEST)
+            
 
         # Calculate tile area
 
@@ -341,6 +350,15 @@ class ProductCreateView(APIView):
             images = logo_url, 
             created_by = user, 
         )
+
+        if product_type == "product":
+            income_account = Account.objects.get(id=income_account, is_active=True)
+            inventory_account = Account.objects.get(id=inventory_account, is_active=True)
+            accountmapping = ProductAccountMapping.objects.create(
+                product = product,
+                inventory_account = inventory_account,
+                income_account = income_account
+            )
 
         return Response({
             "id": product.id,
@@ -503,81 +521,6 @@ class ProductRetrieveView(APIView):
 
         return Response(product_data, status=status.HTTP_200_OK)
 
-
-
-# class ProductUpdateView(APIView):
-#     permission_classes = [IsAuthenticated]
-
-#     def get_user_from_token(self, request):
-#         token = request.headers.get("Authorization", "").split(" ")[1]
-#         try:
-#             payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
-#             user_id = payload.get("user_id")
-#             user = NewUser.objects.get(id=user_id)
-#             return user
-#         except (jwt.ExpiredSignatureError, jwt.DecodeError, NewUser.DoesNotExist):
-#             return None
-
-
-#     def calculate_tiles(self, box_quantity=None, area_sqf=None, pallet_quantity=None, tile_quantity=None):
-#         if box_quantity:
-#             return box_quantity * 10  # 10 tiles per box
-#         elif area_sqf:
-#             return int(area_sqf / 23.33)  # Calculate tiles from sqf
-#         elif pallet_quantity:
-#             return pallet_quantity * 550  # 550 tiles per pallet
-#         elif tile_quantity:
-#             return tile_quantity  # Direct tile count
-#         return None
-    
-
-#     def put(self, request, product_id):
-#         user = self.get_user_from_token(request)
-#         if not user:
-#             return Response({"detail": "Invalid or expired token."}, status=status.HTTP_401_UNAUTHORIZED)
-
-#         try:
-#             product = Product.objects.get(id=product_id, is_active=True)
-#         except Product.DoesNotExist:
-#             return Response({"detail": "Product not found."}, status=status.HTTP_404_NOT_FOUND)
-
-#         # Update fields if provided
-#         product_name = request.data.get("product_name")
-#         price = request.data.get("price")
-#         box_quantity = request.data.get("box_quantity")
-#         area_sqf = request.data.get("area_sqf")
-#         pallet_quantity = request.data.get("pallet_quantity")
-#         tile_quantity = request.data.get("tile_quantity")
-
-#         stock_quantity = self.calculate_tiles(box_quantity, area_sqf, pallet_quantity, tile_quantity)
-        
-#         if stock_quantity is None:
-#             return Response({"detail": "Provide either box_quantity, area_sqf, pallet_quantity, or tile_quantity."}, 
-#                             status=status.HTTP_400_BAD_REQUEST)
-
-#         if_same_name = Product.objects.filter(product_name=product_name, is_active=True).exclude(id=product_id).all()
-#         if if_same_name:
-#             return Response({"detail": "Product name already present."}, status=status.HTTP_400_BAD_REQUEST)
-
-
-#         if product_name:
-#             product.product_name = product_name
-#         if price is not None:
-#             product.price = price
-#         if stock_quantity is not None:
-#             product.stock_quantity = stock_quantity
-
-#         product.updated_by = user
-#         product.save()
-
-#         return Response({
-#             "id": product.id,
-#             "product_name": product.product_name,
-#             "price": str(product.price),  # Convert Decimal to string for JSON compatibility
-#             "stock_quantity": product.stock_quantity,
-#             "updated_date": product.updated_date,
-#             "is_active": product.is_active,
-#         }, status=status.HTTP_200_OK)
 
 
 class ProductDeleteView(APIView):
