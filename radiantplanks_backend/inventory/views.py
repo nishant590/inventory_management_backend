@@ -209,13 +209,14 @@ class ProductListView(APIView):
         products_data = [
             {
                 "id": product.id,
+                "product_image": product.images,
                 "product_name": product.product_name,
                 "category": product.category_id.name if product.category_id else None,
+                "sku": product.sku,
+                "product_length": product.tile_length,
+                "product_width": product.tile_width,
                 "price": str(product.selling_price),
                 "stock_quantity": product.stock_quantity,
-                "created_date": product.created_date,
-                "updated_date": product.updated_date,
-                "is_active": product.is_active,
             }
             for product in products
         ]
