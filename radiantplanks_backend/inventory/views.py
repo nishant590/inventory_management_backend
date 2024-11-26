@@ -464,6 +464,19 @@ class ProductUpdateView(APIView):
             logo_url = posixpath.join('static/product_images', logo_path)
             product.images = logo_url
 
+        if product.product_type == 'product_type':
+            account_mapping = ProductAccountMapping.objects.get(product=product.id)
+            income_account = data.get("income_account")
+            inventory_account = data.get("inventory_account")
+            income_account = Account.objects.get(id=income_account, is_active=True)
+            inventory_account = Account.objects.get(id=inventory_account, is_active=True)
+            accountmapping = ProductAccountMapping.objects.create(
+                product = product,
+                inventory_account = inventory_account,
+                income_account = income_account
+            )
+            account_mapping.save()
+
         # Save updated product
         product.updated_by = user
         product.save()
@@ -494,6 +507,10 @@ class ProductRetrieveView(APIView):
         except Product.DoesNotExist:
             return Response({"detail": "Product not found."}, status=status.HTTP_404_NOT_FOUND)
 
+        if product.product_type == "product":
+            product_accounts = ProductAccountMapping.objects.get(product=product.id)
+            
+
         product_data = {
             "id": product.id,
             "product_name": product.product_name,
@@ -518,6 +535,10 @@ class ProductRetrieveView(APIView):
             "created_date": product.created_date,
             "updated_date": product.updated_date,
             "is_active": product.is_active,
+            "income_account":product_accounts.income_account.name,
+            "income_account_id":product_accounts.income_account.id,
+            "inventory_account": product_accounts.inventory_account.name,
+            "inventory_account_id": product_accounts.inventory_account.id,
         }
 
         return Response(product_data, status=status.HTTP_200_OK)
