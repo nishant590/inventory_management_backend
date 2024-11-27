@@ -70,7 +70,6 @@ class AddAccountAPI(APIView):
             )
 
 
-
 class AccountListView(APIView):
     def get(self, request, *args, **kwargs):
         accounts = Account.objects.filter(is_active=True).order_by('name')

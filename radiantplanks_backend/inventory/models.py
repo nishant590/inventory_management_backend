@@ -100,9 +100,12 @@ class Invoice(models.Model):
     message_on_invoice = models.TextField(null=True, blank=True)  # Message on invoice
     message_on_statement = models.TextField(null=True, blank=True)  # Message on statement
     sum_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
+    is_taxed = models.BooleanField(default=False)
     tax_percentage = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
+    tax_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
     total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
     is_paid = models.BooleanField(default=False)
+    attachments = models.CharField(max_length=255, null=True, blank=True)
     created_by = models.ForeignKey(NewUser, on_delete=models.CASCADE, related_name="invoice_created_by")
     created_date = models.DateTimeField(default=timezone.now)
     updated_by = models.ForeignKey(NewUser, on_delete=models.CASCADE, related_name="invoice_updated_by", null=True)

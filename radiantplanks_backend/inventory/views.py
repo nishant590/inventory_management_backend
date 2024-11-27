@@ -544,7 +544,6 @@ class ProductRetrieveView(APIView):
         return Response(product_data, status=status.HTTP_200_OK)
 
 
-
 class ProductDeleteView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -587,13 +586,55 @@ class CreateInvoiceView(APIView):
         try:
             with transaction.atomic():
                 customer = Customer.objects.get(customer_id=customer_id)
-                total_amount = 0
+                data = request.data
+                customer_email = data.get("customer_email")
+                customer_email_cc = data.get("customer_email_cc")
+                customer_email_bcc = data.get("customer_email_bcc")
+                billing_address = data.get("billing_address")
+                tags = data.get("tags")
+                terms = data.get("terms")
+                bill_date = data.get("bill_date")
+                due_date = data.get("due_date")
+                message_on_invoice = data.get("message_on_invoice")
+                message_on_statement = data.get("message_on_statement")
+                sum_amount = data.get("sum_amount")
+                is_taxed = data.get("is_taxed")
+                tax_percentage = data.get("tax_percentage")
+                tax_amount = data.get("tax_amount")
+                total_amount = float(data.get("total_amount"))
+                is_paid = data.get("is_paid")
+                attachments = request.FILES.get("attachments")
+
+                if attachments:
+                    extension = os.path.splitext(attachments.name)[1]  # Get the file extension
+                    short_unique_filename = generate_short_unique_filename(extension)
+                    fs = FileSystemStorage(location=os.path.join(settings.MEDIA_ROOT, 'invoice_attachments'))
+                    logo_path = fs.save(short_unique_filename, attachments)
+                    attachments_url = posixpath.join('media/invoice_attachments', logo_path)
+                else:
+                    attachments_url = ""
 
                 # Create temporary invoice
                 invoice = Invoice.objects.create(
                     customer=customer,
-                    date=timezone.now(),
+                    customer_email = customer_email,
+                    customer_email_cc = customer_email_cc,
+                    customer_email_bcc = customer_email_bcc,
+                    billing_address = billing_address,
+                    tags = tags,
+                    terms = terms,
+                    bill_date = bill_date, 
+                    due_date = due_date, 
+                    message_on_invoice = message_on_invoice, 
+                    message_on_statement = message_on_statement, 
+                    sum_amount = sum_amount, 
+                    is_taxed = is_taxed, 
+                    tax_percentage = tax_percentage, 
+                    tax_amount = tax_amount, 
+                    is_paid = is_paid,
                     total_amount=total_amount,
+                    attachments=attachments_url,
+                    created_date=timezone.now(),
                     created_by=request.user,
                     is_active=True  # Mark as temporary
                 )
@@ -607,13 +648,13 @@ class CreateInvoiceView(APIView):
                     
                     # Convert quantity to tiles based on the unit type
                     if unit_type == 'pallet':
-                        quantity_in_tiles = quantity * 55 * 10
+                        quantity_in_tiles = quantity * 55
                     elif unit_type == 'box':
-                        quantity_in_tiles = quantity * 10
+                        quantity_in_tiles = quantity
                     elif unit_type == 'sqf':
-                        quantity_in_tiles = math.ceil(quantity / 23.33 * 10)  # Calculate approx tiles for sqf
+                        quantity_in_tiles = math.ceil(float(quantity) / float(product.tile_area))  # Calculate approx tiles for sqf
                     else:
-                        quantity_in_tiles = quantity  # Assume 'tile' is the base unit
+                        quantity_in_tiles = quantity  # Assume 'box' is the base unit
 
                     # Check if enough stock is available
                     if product.stock_quantity < quantity_in_tiles:
@@ -637,7 +678,7 @@ class CreateInvoiceView(APIView):
                     total_amount += line_total
 
                 # Update the invoice's total amount after processing all items
-                invoice.total_amount = total_amount
+                # invoice.total_amount = total_amount
                 invoice.save()
 
             return Response({"invoice_id": invoice.id, "message": "Invoice created successfully."}, status=status.HTTP_201_CREATED)
