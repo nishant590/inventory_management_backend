@@ -38,9 +38,9 @@ class CustomerCreateView(APIView):
             errors['addresses'] = "At least one address is required."
         else:
             for i, addr in enumerate(addresses_data):
-                if 'address_type' not in addr or addr['address_type'] not in ['billing', 'shipping']:
-                    errors[f'addresses[{i}]'] = "Address type must be 'billing' or 'shipping'."
-                if 'street' not in addr:
+                if 'address_type' not in addr or addr['address_type'] not in ['Billing', 'Shipping', 'Billing and Shipping']:
+                    errors[f'addresses[{i}]'] = "Address type must be 'billing' or 'shipping' or 'Billing and Shipping'."
+                if ('street_add_1' not in addr) or ('street_add_2' not in addr):
                     errors[f'addresses[{i}][street]'] = "Street is required."
 
         if errors:
@@ -56,7 +56,8 @@ class CustomerCreateView(APIView):
                     display_name=data.get('display_name', f"{data['first_name']} {data['last_name']}"),
                     company=data.get('company', ''),
                     email=data['email'],
-                    phone=data['phone'],
+                    phone=data.get("phone",""),
+                    mobile_number=data.get("mobile_number"),
                     created_by=request.user,
                     created_date=timezone.now(),
                     updated_by=request.user,
@@ -69,7 +70,8 @@ class CustomerCreateView(APIView):
                     Address.objects.create(
                         customer=customer,
                         address_type=addr_data['address_type'],
-                        street=addr_data['street'],
+                        street_add_1=addr_data.get('street_add_1'),
+                        street_add_2=addr_data.get('street_add_2'),
                         city=addr_data.get('city', ''),
                         state=addr_data.get('state', ''),
                         postal_code=addr_data.get('postal_code', ''),
@@ -97,6 +99,7 @@ class CustomerListView(APIView):
                 "company": customer.company,
                 "email": customer.email,
                 "phone": customer.phone,
+                "mobile_number": customer.mobile_number,
                 "is_active": customer.is_active,
                 "addresses": list(customer.addresses.values()),
                 "created_date": customer.created_date,
@@ -128,6 +131,7 @@ class CustomerEditView(APIView):
         customer.company = data.get("company", customer.company)
         customer.email = data.get("email", customer.email)
         customer.phone = data.get("phone", customer.phone)
+        customer.mobile_number = data.get("mobile_number", customer.phone)
         customer.updated_by = request.user
         customer.updated_date = timezone.now()
         customer.save()
@@ -139,7 +143,8 @@ class CustomerEditView(APIView):
                 Address.objects.create(
                     customer=customer,
                     address_type=addr_data['address_type'],
-                    street=addr_data['street'],
+                    street_add_1=addr_data['street_add_1'],
+                    street_add_2=addr_data['street_add_2'],
                     city=addr_data.get('city', ''),
                     state=addr_data.get('state', ''),
                     postal_code=addr_data.get('postal_code', ''),
