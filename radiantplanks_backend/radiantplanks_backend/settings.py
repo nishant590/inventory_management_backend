@@ -95,27 +95,60 @@ WSGI_APPLICATION = 'radiantplanks_backend.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
-LOGGING = None  # Disable Django's logging config
+LOG_DIR = os.path.join(BASE_DIR, 'logs')
+os.makedirs(LOG_DIR, exist_ok=True)
 
-# Loguru config (this will be used in your logging.py)
-LOGURU_CONFIG = {
-    "handlers": [
-        {
-            "sink": "logs/app.log",
-            "format": "{time} - {name} - {level} - {message}",
-            "rotation": "10 MB",
-            "compression": "zip",
-            "retention": "30 days",
+# Logging configuration
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': True,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
         },
-        {
-            "sink": "logs/error_trace.log",
-            "format": "{time} - {name} - {level} - {message}",
-            "rotation": "10 MB",
-            "compression": "zip",
-            "retention": "30 days",
-            "level": "TRACE",  # Logs trace level specifically for errors
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
         },
-    ],
+    },
+    'handlers': {
+        'custom_file': {
+            'level': 'DEBUG',
+            'class': 'logging.FileHandler',
+            'filename': os.path.join(BASE_DIR, 'logs', 'custom_app.log'),
+            'formatter': 'verbose',
+        },
+        'console': {
+            'level': 'INFO',
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple',
+        },
+    },
+    'loggers': {
+        'custom_logger': {
+            'handlers': ['custom_file', 'console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'trace_logger': {
+            'handlers': ['custom_file', 'console'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+        'django': {
+            'handlers': [],
+            'level': 'CRITICAL',
+        },
+        'django.request': {
+            'handlers': [],
+            'level': 'CRITICAL',
+        },
+        'django.server': {
+            'handlers': [],
+            'level': 'CRITICAL',
+        },
+    },
 }
 
 DATABASES = {

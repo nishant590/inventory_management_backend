@@ -1,7 +1,8 @@
 from rest_framework import generics, exceptions
 from rest_framework.permissions import IsAuthenticated
 from django.db import transaction
-from .models import Invoice, InvoiceItem, Product, Customer, Estimate, EstimateItem, ProductAccountMapping
+from .models import (Invoice, InvoiceItem, Product, Customer, Estimate, 
+                     EstimateItem, ProductAccountMapping, Bill, BillItems)
 from .serializers import CategorySerializer, ProductSerializer
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
@@ -809,8 +810,8 @@ class CreateInvoiceView(APIView):
                 # Process each item in the invoice
                 for item_data in items:
                     product = Product.objects.get(id=item_data['product_id'])
-                    quantity = item_data['quantity']
-                    unit_price = item_data['unit_price']
+                    quantity = float(item_data['quantity'])
+                    unit_price = float(item_data['unit_price'])
                     unit_type = item_data['unit_type']  # Can be 'tile', 'box', or 'pallet'
                     
                     # Convert quantity to tiles based on the unit type
@@ -1033,5 +1034,115 @@ class CreateEstimateView(APIView):
             return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+class CreateBillView(APIView):
+    def post(self, request):
+        data = request.data
+        customer_id = data.get("customer_id")
+        items = data.get("items", [])  # List of { product_id, quantity, unit_price, unit_type }
+
+        if isinstance(items, str):  # Convert to dictionary if received as a JSON string
+            items = json.loads(items)
+        if not customer_id or not items:
+            return Response({"detail": "Customer ID and items are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            with transaction.atomic():
+                customer = Customer.objects.get(customer_id=customer_id)
+                data = request.data
+                # customer_email = data.get("customer_email")
+                # customer_email_cc = data.get("customer_email_cc")
+                # customer_email_bcc = data.get("customer_email_bcc")
+                mailing_address = data.get("mailing_address")
+                # shipping_address = data.get("shipping_address")
+                tags = data.get("tags")
+                terms = data.get("terms")
+                bill_date = data.get("bill_date")
+                due_date = data.get("due_date")
+                # message_on_invoice = data.get("message_on_invoice")
+                # message_on_statement = data.get("message_on_statement")
+                # sum_amount = float(data.get("sum_amount"))
+                # is_taxed = data.get("is_taxed")
+                # if isinstance(is_taxed, str):
+                #     is_taxed = is_taxed.lower() in ['true', '1', 'yes', 'y']
+                # tax_percentage = float(data.get("tax_percentage"))
+                # tax_amount = float(data.get("tax_amount"))
+                total_amount = float(data.get("total_amount"))
+                is_paid = data.get("is_paid")
+                if isinstance(is_paid, str):
+                    is_paid = is_paid.lower() in ['true', '1', 'yes', 'y']
+                attachments = request.FILES.get("attachments")
+
+                if attachments:
+                    extension = os.path.splitext(attachments.name)[1]  # Get the file extension
+                    short_unique_filename = generate_short_unique_filename(extension)
+                    fs = FileSystemStorage(location=os.path.join(settings.MEDIA_ROOT, 'bill_attachments'))
+                    logo_path = fs.save(short_unique_filename, attachments)
+                    attachments_url = posixpath.join('media/bill_attachments', logo_path)
+                else:
+                    attachments_url = ""
+
+                # Create temporary invoice
+                invoice = Bill.objects.create(
+                    customer=customer,
+                    mailing_address = mailing_address,
+                    tags = tags,
+                    terms = terms,
+                    bill_date = bill_date, 
+                    due_date = due_date,  
+                    is_paid = is_paid,
+                    total_amount=total_amount,
+                    attachments=attachments_url,
+                    created_date=timezone.now(),
+                    created_by=request.user,
+                    is_active=True  # Mark as temporary
+                )
+
+                # Process each item in the invoice
+                for item_data in items:
+                    product = Product.objects.get(id=item_data['product_id'])
+                    quantity = item_data['quantity']
+                    unit_price = item_data['unit_price']
+                    unit_type = item_data['unit_type']  # Can be 'tile', 'box', or 'pallet'
+                    
+                    # Convert quantity to tiles based on the unit type
+                    if unit_type == 'pallet':
+                        quantity_in_tiles = quantity * 55
+                    elif unit_type == 'box':
+                        quantity_in_tiles = quantity
+                    elif unit_type == 'sqf':
+                        quantity_in_tiles = math.ceil(float(quantity) / float(product.tile_area))  # Calculate approx tiles for sqf
+                    else:
+                        quantity_in_tiles = quantity  # Assume 'box' is the base unit
+
+                    # Check if enough stock is available
+                    if product.stock_quantity < quantity_in_tiles:
+                        return Response({"detail": f"Insufficient stock for product {product.product_name}."}, status=status.HTTP_400_BAD_REQUEST)
+
+                    # Deduct stock and calculate the line total
+                    product.stock_quantity -= quantity_in_tiles
+                    product.save()
+                    line_total = unit_price * quantity_in_tiles
+
+                    # Create invoice item
+                    InvoiceItem.objects.create(
+                        invoice=invoice,
+                        product=product,
+                        quantity=quantity_in_tiles,  # Store as selected unit (pallets, boxes, sqf, etc.)
+                        unit_price=unit_price,
+                        created_by=request.user
+                    )
+                    
+                    # Accumulate total amount
+                    total_amount += line_total
+
+                # Update the invoice's total amount after processing all items
+                # invoice.total_amount = total_amount
+                invoice.save()
+
+            return Response({"invoice_id": invoice.id, "message": "Invoice created successfully."}, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            logger.trace("Error occured", exc_info=True)
+            return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 

@@ -10,7 +10,11 @@ from rest_framework.views import APIView
 from rest_framework.permissions import IsAdminUser,AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 import requests
-from loguru import logger
+import logging
+
+# Get the default logger
+logger = logging.getLogger('custom_logger')
+# trace_logger = logging.getLogger('trace_logger')
 
 class RegisterAPIView(APIView):
     permission_classes = [AllowAny]
@@ -79,6 +83,7 @@ class LoginView(APIView):
             })
 
         except NewUser.DoesNotExist:
+            logger.exception("Exception : User does not exsists", exc_info=True)
             raise exceptions.AuthenticationFailed('Invalid credentials')
 
     def get_geolocation(self, ip):
