@@ -174,18 +174,19 @@ class EstimateItem(models.Model):
 class Bill(models.Model):
     vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE)
     mailing_address = models.TextField(null=True, blank=True)
+    bill_number = models.CharField(max_length=255, unique=True, null=True, blank=True)
     tags = models.CharField(max_length=255, null=True, blank=True)
     terms = models.TextField(null=True, blank=True)
-    bill_no = models.CharField(max_length=100, unique=True)
     bill_date = models.DateTimeField(default=timezone.now)
     due_date = models.DateTimeField(default=timezone.now)
-    bill_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    total_amount = models.DecimalField(max_digits=10, decimal_places=2)
     is_paid = models.BooleanField(default=False)
     memo = models.TextField(null=True, blank=True)
     attachments = models.CharField(max_length=255, null=True, blank=True)
     created_by = models.ForeignKey(NewUser, on_delete=models.CASCADE, related_name="bill_created_by", null=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    created_date = models.DateTimeField(auto_now_add=True)
+    updated_date = models.DateTimeField(auto_now=True)
+    is_active = models.BooleanField(default=False)
 
 
 class BillItems(models.Model):

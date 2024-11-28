@@ -1,7 +1,7 @@
 from rest_framework import generics, exceptions
 from rest_framework.permissions import IsAuthenticated
 from django.db import transaction
-from .models import (Invoice, InvoiceItem, Product, Customer, Estimate, 
+from .models import (Invoice, InvoiceItem, Product, Estimate, 
                      EstimateItem, ProductAccountMapping, Bill, BillItems)
 from .serializers import CategorySerializer, ProductSerializer
 from rest_framework.views import APIView
@@ -20,7 +20,7 @@ import json
 import jwt
 from xhtml2pdf import pisa
 from io import BytesIO
-from customers.models import Customer
+from customers.models import Customer, Vendor
 from django.utils import timezone
 from django.core.mail import EmailMessage
 from accounts.models import Account, Transaction, TransactionLine, ReceivableTracking
@@ -826,7 +826,8 @@ class CreateInvoiceView(APIView):
                     quantity = float(item_data['quantity'])
                     unit_price = float(item_data['unit_price'])
                     unit_type = item_data['unit_type']  # Can be 'tile', 'box', or 'pallet'
-                    
+                    description = item_data.get("description","")
+
                     # Convert quantity to tiles based on the unit type
                     if unit_type == 'pallet':
                         quantity_in_tiles = quantity * 55
@@ -850,6 +851,7 @@ class CreateInvoiceView(APIView):
                     InvoiceItem.objects.create(
                         invoice=invoice,
                         product=product,
+                        description=description,
                         quantity=quantity_in_tiles,  # Store as selected unit (pallets, boxes, sqf, etc.)
                         unit_price=unit_price,
                         created_by=request.user
@@ -1048,23 +1050,33 @@ class CreateEstimateView(APIView):
 
 
 class CreateBillView(APIView):
+    def get_user_from_token(self, request):
+        token = request.headers.get("Authorization", "").split(" ")[1]
+        try:
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+            user_id = payload.get("user_id")
+            user = NewUser.objects.get(id=user_id)
+            return user
+        except (jwt.ExpiredSignatureError, jwt.DecodeError, NewUser.DoesNotExist):
+            return None
+
     def post(self, request):
+        user = self.get_user_from_token(request)
         data = request.data
-        customer_id = data.get("customer_id")
+        vendor_id = data.get("vendor_id")
         items = data.get("items", [])  # List of { product_id, quantity, unit_price, unit_type }
 
         if isinstance(items, str):  # Convert to dictionary if received as a JSON string
             items = json.loads(items)
-        if not customer_id or not items:
-            return Response({"detail": "Customer ID and items are required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not vendor_id or not items:
+            return Response({"detail": "vendor ID and items are required."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             with transaction.atomic():
-                customer = Customer.objects.get(customer_id=customer_id)
+                vendor = Vendor.objects.get(vendor_id=vendor_id)
                 data = request.data
-                # customer_email = data.get("customer_email")
-                # customer_email_cc = data.get("customer_email_cc")
-                # customer_email_bcc = data.get("customer_email_bcc")
+
+                bill_number = data.get("bill_number")
                 mailing_address = data.get("mailing_address")
                 # shipping_address = data.get("shipping_address")
                 tags = data.get("tags")
@@ -1095,11 +1107,12 @@ class CreateBillView(APIView):
                     attachments_url = ""
 
                 # Create temporary invoice
-                invoice = Bill.objects.create(
-                    customer=customer,
+                bill = Bill.objects.create(
+                    vendor=vendor,
                     mailing_address = mailing_address,
                     tags = tags,
                     terms = terms,
+                    bill_number = bill_number,
                     bill_date = bill_date, 
                     due_date = due_date,  
                     is_paid = is_paid,
@@ -1113,9 +1126,10 @@ class CreateBillView(APIView):
                 # Process each item in the invoice
                 for item_data in items:
                     product = Product.objects.get(id=item_data['product_id'])
-                    quantity = item_data['quantity']
-                    unit_price = item_data['unit_price']
+                    quantity = float(item_data['quantity'])
+                    unit_price = float(item_data['unit_price'])
                     unit_type = item_data['unit_type']  # Can be 'tile', 'box', or 'pallet'
+                    description = item_data.get("description","")  # Can be 'tile', 'box', or 'pallet'
                     
                     # Convert quantity to tiles based on the unit type
                     if unit_type == 'pallet':
@@ -1128,19 +1142,20 @@ class CreateBillView(APIView):
                         quantity_in_tiles = quantity  # Assume 'box' is the base unit
 
                     # Check if enough stock is available
-                    if product.stock_quantity < quantity_in_tiles:
-                        return Response({"detail": f"Insufficient stock for product {product.product_name}."}, status=status.HTTP_400_BAD_REQUEST)
+                    # if product.stock_quantity < quantity_in_tiles:
+                    #     return Response({"detail": f"Insufficient stock for product {product.product_name}."}, status=status.HTTP_400_BAD_REQUEST)
 
                     # Deduct stock and calculate the line total
-                    product.stock_quantity -= quantity_in_tiles
+                    product.stock_quantity += quantity_in_tiles
                     product.save()
                     line_total = unit_price * quantity_in_tiles
 
                     # Create invoice item
-                    InvoiceItem.objects.create(
-                        invoice=invoice,
+                    BillItems.objects.create(
+                        bill=bill,
                         product=product,
                         quantity=quantity_in_tiles,  # Store as selected unit (pallets, boxes, sqf, etc.)
+                        description=description,
                         unit_price=unit_price,
                         created_by=request.user
                     )
@@ -1150,9 +1165,9 @@ class CreateBillView(APIView):
 
                 # Update the invoice's total amount after processing all items
                 # invoice.total_amount = total_amount
-                invoice.save()
+                bill.save()
 
-            return Response({"invoice_id": invoice.id, "message": "Invoice created successfully."}, status=status.HTTP_201_CREATED)
+            return Response({"invoice_id": bill.bill_number, "message": "Bill created successfully."}, status=status.HTTP_201_CREATED)
 
         except Exception as e:
             logger.trace("Error occured", exc_info=True)
