@@ -107,6 +107,14 @@ LOGURU_CONFIG = {
             "compression": "zip",
             "retention": "30 days",
         },
+        {
+            "sink": "logs/error_trace.log",
+            "format": "{time} - {name} - {level} - {message}",
+            "rotation": "10 MB",
+            "compression": "zip",
+            "retention": "30 days",
+            "level": "TRACE",  # Logs trace level specifically for errors
+        },
     ],
 }
 

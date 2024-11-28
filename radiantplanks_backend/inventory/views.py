@@ -24,6 +24,7 @@ from django.core.mail import EmailMessage
 from accounts.models import Account, Transaction, TransactionLine, ReceivableTracking
 from django.template.loader import render_to_string
 import math
+from loguru import logger
 import uuid
 import time
 from decimal import Decimal
@@ -847,6 +848,7 @@ class CreateInvoiceView(APIView):
             return Response({"invoice_id": invoice.id, "message": "Invoice created successfully."}, status=status.HTTP_201_CREATED)
 
         except Exception as e:
+            logger.trace("Error occured", exc_info=True)
             return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
 
