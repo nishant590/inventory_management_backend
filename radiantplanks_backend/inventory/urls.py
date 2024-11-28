@@ -9,6 +9,7 @@ from .views import (CategoryListCreateView,
                     ProductUpdateView,
                     ProductDeleteView,
                     CreateInvoiceView,
+                    GetLatestInvoiceId,
                     SendInvoiceView,)
 
 urlpatterns = [
@@ -26,6 +27,7 @@ urlpatterns = [
     path('products/update/<int:product_id>/', ProductUpdateView.as_view(), name='product-update'),
     path('products/delete/<int:product_id>/', ProductDeleteView.as_view(), name='product-delete'),
 
+    path('invoice/getid/', GetLatestInvoiceId.as_view(), name='invoice-get'),
     path('invoice/create/', CreateInvoiceView.as_view(), name='invoice-create'),
     path('invoice/send/<int:invoice_id>/', SendInvoiceView.as_view(), name='invoice-send'),
     

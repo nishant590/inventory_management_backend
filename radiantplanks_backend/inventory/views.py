@@ -36,6 +36,7 @@ from django.urls import reverse
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 import base64
+from django.db.models import Max
 # Category Views
 
 # config_path = pdfkit.configuration(wkhtmltopdf='C:/Program Files/wkhtmltopdf/bin/wkhtmltopdf.exe')
@@ -440,9 +441,9 @@ class ProductCreateView(APIView):
         if product_image:
             extension = os.path.splitext(product_image.name)[1]  # Get the file extension
             short_unique_filename = generate_short_unique_filename(extension)
-            fs = FileSystemStorage(location=os.path.join(settings.STATIC_ROOT, 'product_images'))
+            fs = FileSystemStorage(location=os.path.join(settings.MEDIA_ROOT, 'product_images'))
             logo_path = fs.save(short_unique_filename, product_image)
-            logo_url = posixpath.join('static/product_images', logo_path)
+            logo_url = posixpath.join('media/product_images', logo_path)
         else:
             logo_url = ""
 
@@ -619,9 +620,9 @@ class ProductUpdateView(APIView):
         if product_image:
             extension = os.path.splitext(product_image.name)[1]  # Get the file extension
             short_unique_filename = generate_short_unique_filename(extension)
-            fs = FileSystemStorage(location=os.path.join(settings.STATIC_ROOT, 'product_images'))
+            fs = FileSystemStorage(location=os.path.join(settings.MEDIA_ROOT, 'product_images'))
             logo_path = fs.save(short_unique_filename, product_image)
-            logo_url = posixpath.join('static/product_images', logo_path)
+            logo_url = posixpath.join('media/product_images', logo_path)
             product.images = logo_url
 
         if product.product_type == 'product_type':
@@ -733,6 +734,18 @@ class ProductDeleteView(APIView):
 
         return Response({"detail": "Product deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
 
+class GetLatestInvoiceId(APIView):
+    def get(self, request):
+        """
+        API endpoint to retrieve the latest invoice ID
+        """
+        try:
+            latest_invoice_id = Invoice.objects.aggregate(max_id=Max('id'))['max_id']
+            new_invoice_id = (latest_invoice_id or 0) + 1  # Start with 1 if no invoices exist
+
+            return Response({'latest_invoice_id': new_invoice_id}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)      
 
 class CreateInvoiceView(APIView):
     def post(self, request):

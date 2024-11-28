@@ -119,27 +119,6 @@ class Invoice(models.Model):
         return f"Invoice {self.invoice_number} - Customer {self.customer} - Total {self.total_amount}"
 
 
-# class Invoice(models.Model):
-#     customer = models.ForeignKey(Customer, on_delete=models.CASCADE)
-#     customer_email = models.CharField(max_length=100, null=True)
-#     date = models.DateTimeField(default=timezone.now)
-#     sum_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
-#     tax_percentage = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
-#     total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
-#     bill_date = models.DateTimeField(default=timezone.now )
-#     due_date = models.DateTimeField(default=timezone.now )
-#     message = models.CharField(max_length=100, null=True)
-#     is_paid = models.BooleanField(default=False)
-#     created_by = models.ForeignKey(NewUser, on_delete=models.CASCADE, related_name="invoice_created_by")
-#     created_date = models.DateTimeField(default=timezone.now)
-#     updated_by = models.ForeignKey(NewUser, on_delete=models.CASCADE, related_name="invoice_updated_by", null=True)
-#     updated_date = models.DateTimeField(null=True, blank=True)
-#     is_active = models.BooleanField(default=True)
-
-#     def __str__(self):
-#         return f"Invoice {self.id} - Customer {self.customer_id} - Total {self.total_amount}"
-
-
 class InvoiceItem(models.Model):
     invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name="items")
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
@@ -204,7 +183,7 @@ class Bill(models.Model):
     is_paid = models.BooleanField(default=False)
     memo = models.TextField(null=True, blank=True)
     attachments = models.CharField(max_length=255, null=True, blank=True)
-    created_by = models.ForeignKey(NewUser, on_delete=models.CASCADE, related_name="bill_created_by")
+    created_by = models.ForeignKey(NewUser, on_delete=models.CASCADE, related_name="bill_created_by", null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
