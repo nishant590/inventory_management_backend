@@ -15,6 +15,7 @@ from django.core.files.storage import FileSystemStorage
 import traceback
 from django.conf import settings
 import os
+import json
 import jwt
 from xhtml2pdf import pisa
 from io import BytesIO
@@ -738,6 +739,8 @@ class CreateInvoiceView(APIView):
         customer_id = data.get("customer_id")
         items = data.get("items", [])  # List of { product_id, quantity, unit_price, unit_type }
 
+        if isinstance(items, str):  # Convert to dictionary if received as a JSON string
+            items = json.loads(items)
         if not customer_id or not items:
             return Response({"detail": "Customer ID and items are required."}, status=status.HTTP_400_BAD_REQUEST)
 

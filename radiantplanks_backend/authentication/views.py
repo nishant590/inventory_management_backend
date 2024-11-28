@@ -10,7 +10,7 @@ from rest_framework.views import APIView
 from rest_framework.permissions import IsAdminUser,AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 import requests
-
+from loguru import logger
 
 class RegisterAPIView(APIView):
     permission_classes = [AllowAny]
@@ -71,6 +71,7 @@ class LoginView(APIView):
             user.save()
 
             token = RefreshToken.for_user(user)
+            logger.info(f"User logged in : {user.username} | logintime : {user.last_login}")
             return Response({
                 'refresh': str(token),
                 'access': str(token.access_token),

@@ -1,34 +1,26 @@
-# common/logging.py
-
-from functools import wraps
 from loguru import logger
-from django.conf import settings
-import sys
+import os
 
-# Configure loguru
-logger.remove()  # Remove default handler
-logger.add(sys.stdout, colorize=True, format="{time} - {level} - {message}")
-logger.add(**settings.LOGURU_CONFIG["handlers"][0])  # Add file handler from settings
+# Define the log file directory and ensure it exists
+log_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'logs')
+os.makedirs(log_dir, exist_ok=True)
 
-def log_api_call(func):
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        view_instance = args[0]
-        request = args[1]
-        
-        # Log request
-        logger.info(f"API Call: {request.method} {request.path}")
-        logger.info(f"User: {request.user}")
-        logger.info(f"Data: {request.data if hasattr(request, 'data') else 'No data'}")
-        
-        try:
-            response = func(*args, **kwargs)
-            # Log success
-            logger.success(f"API Response: {response.status_code}")
-            return response
-        except Exception as e:
-            # Log error
-            logger.error(f"API Error: {str(e)}")
-            raise
-    
-    return wrapper
+# Loguru configuration
+logger.remove()  # Remove the default handler
+logger.add(
+    os.path.join(log_dir, "app.log"),
+    format="{time} - {name} - {level} - {message}",
+    rotation="10 MB",  # Rotation after log file reaches 10MB
+    compression="zip",
+    retention="30 days",  # Keep logs for 30 days
+)
+
+# For trace-level logs (for errors)
+logger.add(
+    os.path.join(log_dir, "error_trace.log"),
+    format="{time} - {name} - {level} - {message}",
+    level="TRACE",  # Only log trace level or above
+    rotation="10 MB",
+    compression="zip",
+    retention="30 days",
+)
