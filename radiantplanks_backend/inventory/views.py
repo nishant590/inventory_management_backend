@@ -21,11 +21,21 @@ from io import BytesIO
 from customers.models import Customer
 from django.utils import timezone
 from django.core.mail import EmailMessage
+from accounts.models import Account, Transaction, TransactionLine, ReceivableTracking
 from django.template.loader import render_to_string
 import math
 import uuid
 import time
+from decimal import Decimal
+from django.db import transaction as db_transaction
+from datetime import date, datetime
+from django.urls import reverse
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+import base64
 # Category Views
+
+# config_path = pdfkit.configuration(wkhtmltopdf='C:/Program Files/wkhtmltopdf/bin/wkhtmltopdf.exe')
 
 def generate_short_unique_filename(extension):
     # Shortened UUID (6 characters) + Unix timestamp for uniqueness
@@ -34,8 +44,150 @@ def generate_short_unique_filename(extension):
     return f"{unique_id}_{timestamp}{extension}"
 
 
-def add_inventory_value(stock_quantity, stock_price):
-    pass
+def add_inventory_transaction(product_name, quantity, unit_cost, inventory_account, created_by):
+    """
+    Add an inventory transaction when a new product is added.
+    
+    :param product_name: Name of the product being added.
+    :param quantity: Quantity of the product.
+    :param unit_cost: Cost per unit of the product.
+    :param created_by: User who created the product (instance of NewUser).
+    """
+    # inventory_account = Account.objects.filter(account_type='inventory').first()
+    # if not inventory_account:
+    #     raise ValueError("Inventory account does not exist.")
+
+    # Calculate total value of inventory addition
+    try:
+        total_cost = Decimal(quantity) * Decimal(unit_cost)
+
+        with db_transaction.atomic():
+            # Create a transaction record
+            transaction = Transaction.objects.create(
+                reference_number=f"INV-{date.today().strftime('%Y%m%d')}-{inventory_account.id}",
+                transaction_type='journal',
+                date=date.today(),
+                description=f"Added inventory for {product_name}",
+                created_by=created_by,
+            )
+
+            # Create transaction lines
+            # Debit: Inventory account (increase inventory)
+            TransactionLine.objects.create(
+                transaction=transaction,
+                account=inventory_account,
+                description=f"Inventory addition for {product_name}",
+                debit_amount=total_cost,
+                credit_amount=0,
+            )
+
+            # Credit: Assume it's an owner's equity or cash account (to offset the inventory addition)
+            owner_equity_account = Account.objects.filter(account_type='owner_equity').first()
+            if not owner_equity_account:
+                raise ValueError("Owner equity account does not exist.")
+            
+            TransactionLine.objects.create(
+                transaction=transaction,
+                account=owner_equity_account,
+                description=f"Fund allocation for inventory addition of {product_name}",
+                debit_amount=0,
+                credit_amount=total_cost,
+            )
+
+            # Update inventory account balance
+            inventory_account.balance += total_cost
+            owner_equity_account -= total_cost
+            inventory_account.save()
+            owner_equity_account.save()
+            return True
+    except Exception as e:
+        return False
+    
+def create_invoice_transaction(customer, products, total_amount, user):
+    """
+    Adjust inventory and create account receivable for the invoice.
+    """
+    inventory_account = Account.objects.get(code='INV-001')  # Inventory account
+    receivable_account = Account.objects.get(code='AR-001')  # Accounts Receivable account
+    
+    # Create a new transaction
+    transaction = Transaction.objects.create(
+        reference_number=f"INV-{uuid.uuid4().hex[:6].upper()}",
+        transaction_type='income',
+        date=datetime.now(),
+        description=f"Invoice for customer {customer.name}",
+        created_by=user  # Assuming you have request context
+    )
+
+    # Adjust inventory and add account receivable
+    for product in products:
+        product_name = product["name"]
+        quantity = product["quantity"]
+        unit_cost = product["unit_cost"]
+        total_cost = quantity * unit_cost
+        
+        # Deduct inventory (credit inventory account)
+        TransactionLine.objects.create(
+            transaction=transaction,
+            account=inventory_account,
+            description=f"Inventory adjustment for {product_name}",
+            debit_amount=0,
+            credit_amount=total_cost,
+        )
+
+    # Add receivable (debit receivables account)
+    TransactionLine.objects.create(
+        transaction=transaction,
+        account=receivable_account,
+        description=f"Account receivable for invoice to {customer.name}",
+        debit_amount=total_amount,
+        credit_amount=0,
+    )
+
+    # Update receivable tracking
+    receivable, created = ReceivableTracking.objects.get_or_create(customer=customer)
+    receivable.receivable_amount += total_amount
+    receivable.save()
+
+
+def process_payment(customer, payment_amount, user):
+    """
+    Process payment for a customer and update accounts.
+    """
+    receivable_account = Account.objects.get(code='AR-001')  # Accounts Receivable account
+    bank_account = Account.objects.get(code='BANK-001')  # Bank account
+    
+    # Create a new transaction
+    transaction = Transaction.objects.create(
+        reference_number=f"PAY-{uuid.uuid4().hex[:6].upper()}",
+        transaction_type='income',
+        date=datetime.now(),
+        description=f"Payment received from {customer.name}",
+        created_by=user  # Assuming you have request context
+    )
+
+    # Debit bank account (increase bank balance)
+    TransactionLine.objects.create(
+        transaction=transaction,
+        account=bank_account,
+        description=f"Payment received from {customer.name}",
+        debit_amount=payment_amount,
+        credit_amount=0,
+    )
+
+    # Credit receivables account (decrease receivables)
+    TransactionLine.objects.create(
+        transaction=transaction,
+        account=receivable_account,
+        description=f"Clear receivable for {customer.name}",
+        debit_amount=0,
+        credit_amount=payment_amount,
+    )
+
+    # Update receivable tracking
+    receivable = ReceivableTracking.objects.get(customer=customer)
+    receivable.receivable_amount -= payment_amount
+    receivable.save()
 
 
 class CategoryListCreateView(APIView):
@@ -360,6 +512,11 @@ class ProductCreateView(APIView):
                 inventory_account = inventory_account,
                 income_account = income_account
             )
+            # inventory_add = add_inventory_transaction(product_name = product_name, 
+            #                                           quantity = stock_quantity, 
+            #                                           unit_cost = purchase_price, 
+            #                                           inventory_account = inventory_account, 
+            #                                           created_by = user)
 
         return Response({
             "id": product.id,
@@ -591,6 +748,7 @@ class CreateInvoiceView(APIView):
                 customer_email_cc = data.get("customer_email_cc")
                 customer_email_bcc = data.get("customer_email_bcc")
                 billing_address = data.get("billing_address")
+                shipping_address = data.get("shipping_address")
                 tags = data.get("tags")
                 terms = data.get("terms")
                 bill_date = data.get("bill_date")
@@ -599,10 +757,14 @@ class CreateInvoiceView(APIView):
                 message_on_statement = data.get("message_on_statement")
                 sum_amount = float(data.get("sum_amount"))
                 is_taxed = data.get("is_taxed")
+                if isinstance(is_taxed, str):
+                    is_taxed = is_taxed.lower() in ['true', '1', 'yes', 'y']
                 tax_percentage = float(data.get("tax_percentage"))
                 tax_amount = float(data.get("tax_amount"))
                 total_amount = float(data.get("total_amount"))
                 is_paid = data.get("is_paid")
+                if isinstance(is_paid, str):
+                    is_paid = is_paid.lower() in ['true', '1', 'yes', 'y']
                 attachments = request.FILES.get("attachments")
 
                 if attachments:
@@ -621,6 +783,7 @@ class CreateInvoiceView(APIView):
                     customer_email_cc = customer_email_cc,
                     customer_email_bcc = customer_email_bcc,
                     billing_address = billing_address,
+                    shipping_address = shipping_address,
                     tags = tags,
                     terms = terms,
                     bill_date = bill_date, 
@@ -697,9 +860,12 @@ class SendInvoiceView(APIView):
             # Prepare data for template rendering
             items_data = [
                 {
-                    "product": item.product,
+                    "product_image": item.product.images if item.product.images else None,
+                    "product": item.product.product_name,
+                    "sku": item.product.sku,
+                    "dim": f"{item.product.tile_length} x {item.product.tile_width}",
                     "quantity": item.quantity,
-                    "unit_type": "tiles",  # Adjust based on your logic
+                    "unit_type": "box",
                     "unit_price": item.unit_price,
                     "total_price": item.unit_price * item.quantity,
                 }
@@ -708,36 +874,87 @@ class SendInvoiceView(APIView):
             context = {
                 "invoice": invoice,
                 "customer": invoice.customer,
-                "items": items_data,
+                "items": items_data
             }
 
             # Render the HTML template
-            html_string = render_to_string("invoices2.html", context)
+            html_string = render_to_string("invoice_template.html", context)
             
-            # Generate PDF from HTML using xhtml2pdf
-            pdf_file = BytesIO()
-            pisa_status = pisa.CreatePDF(BytesIO(html_string.encode("utf-8")), dest=pdf_file)
+        except Invoice.DoesNotExist:
+            return Response({"detail": "Invoice not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            print(traceback.format_exc())
+            return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-            if pisa_status.err:
-                return Response({"detail": "Error creating PDF"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        try:
+            chrome_options = Options()
+            chrome_options.add_argument("--headless")
+            chrome_options.add_argument("--disable-gpu")
+            chrome_options.add_argument("--no-sandbox")
+            chrome_options.add_argument("--disable-dev-shm-usage")
 
-            # Email setup
+            # Initialize webdriver
+            driver = webdriver.Chrome(options=chrome_options)
+
+            # Use a local HTML file instead of trying to reverse a URL
+            # Save the HTML to a temporary file
+            pdf_folder = os.path.join(settings.MEDIA_ROOT, 'pdfs')
+            os.makedirs(pdf_folder, exist_ok=True)
+            
+            temp_html_path = os.path.join(pdf_folder, f"Invoice_{invoice.id}.html")
+            with open(temp_html_path, 'w', encoding='utf-8') as f:
+                f.write(html_string)
+
+            # Navigate to the local file
+            driver.get(f"file://{temp_html_path}")
+
+            # Wait for page to load (adjust as needed)
+            driver.implicitly_wait(10)
+
+            # Generate unique filename
+            unique_filename = f"Invoice_{invoice.id}.pdf"
+            pdf_path = os.path.join(pdf_folder, unique_filename)
+
+            # Print page to PDF
+            print_options = {
+                'landscape': False,
+                'paperWidth': 8.27,  # A4 width in inches
+                'paperHeight': 11.69,  # A4 height in inches
+                'marginTop': 0.39,
+                'marginBottom': 0.39,
+                'marginLeft': 0.39,
+                'marginRight': 0.39,
+            }
+            pdf_data = driver.execute_cdp_cmd('Page.printToPDF', print_options)
+            
+            # Save PDF
+            with open(pdf_path, 'wb') as f:
+                f.write(base64.b64decode(pdf_data['data']))
+
+            # Close the driver
+            driver.quit()
+
+        except Exception as e:
+            print(traceback.format_exc())
+            return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        with open(pdf_path, 'rb') as pdf_file:
+            # Compose and send email
             email = EmailMessage(
                 subject=f"Invoice #{invoice.id}",
                 body="Please find attached your invoice.",
                 from_email=settings.DEFAULT_FROM_EMAIL,
                 to=[invoice.customer.email],
             )
-            email.attach(f"Invoice_{invoice.id}.pdf", pdf_file.getvalue(), "application/pdf")
-            email.send()
-
-            return Response({"message": "Invoice sent successfully"}, status=status.HTTP_200_OK)
-
-        except Invoice.DoesNotExist:
-            return Response({"detail": "Invoice not found."}, status=status.HTTP_404_NOT_FOUND)
-        except Exception as e:
-            print(traceback.format_exc())
-            return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            email.attach(f"Invoice_{invoice.id}.pdf", pdf_file.read(), "application/pdf")
+            
+            try:
+                email.send()
+                return Response({"message": "Invoice sent successfully"}, status=status.HTTP_200_OK)
+            except Exception as e:
+                # Log the error
+                print(f"Email sending failed: {e}")
+                return Response({"message": "Error in sending mail please check the customer email"}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class CreateEstimateView(APIView):
@@ -809,3 +1026,7 @@ class CreateEstimateView(APIView):
 
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
+

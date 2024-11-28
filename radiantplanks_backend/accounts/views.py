@@ -1,7 +1,7 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from .models import Account
+from .models import Account, ReceivableTracking
 from django.core.exceptions import ValidationError
 
 
@@ -88,3 +88,17 @@ class AccountListView(APIView):
             for account in accounts
         ]
         return Response({'accounts': account_data}, status=status.HTTP_200_OK)
+    
+
+class AccountReceivablesView(APIView):
+    def get(self, request):
+        receivables = ReceivableTracking.objects.all()
+        data = [{"customer": r.customer.name, "receivable_amount": r.receivable_amount} for r in receivables]
+        return Response({"data":data}, status=status.HTTP_200_OK)
+    
+
+class AccountPayablesView(APIView):
+    def get(self, request):
+        account_payables = Account.objects.filter(account_type='accounts_payable')
+        data = [{"name": acc.name, "balance": acc.balance} for acc in account_payables]
+        return Response({"data":data}, status=status.HTTP_200_OK)

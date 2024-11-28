@@ -5,6 +5,8 @@ from django.utils import timezone
 from django.utils.timezone import now
 from accounts.models import Account
 
+
+
 class Tag(models.Model):
     name = models.CharField(max_length=50, unique=True)  # Tag name
     created_by = models.ForeignKey(NewUser, on_delete=models.CASCADE, related_name="tags_created")
@@ -92,6 +94,7 @@ class Invoice(models.Model):
     customer_email_cc = models.CharField(max_length=255, null=True, blank=True)  # For CC/BCC
     customer_email_bcc = models.CharField(max_length=255, null=True, blank=True)
     billing_address = models.TextField(null=True, blank=True)  # Billing address
+    shipping_address = models.TextField(null=True, blank=True)  # shipping address
     tags = models.CharField(max_length=255, null=True, blank=True)  # Tags field
     terms = models.TextField(null=True, blank=True)  # Terms field
     bill_date = models.DateTimeField(default=timezone.now)  # Redundant, could be removed

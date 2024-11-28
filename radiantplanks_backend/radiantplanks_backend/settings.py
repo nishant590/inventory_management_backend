@@ -58,9 +58,6 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-PLAID_CLIENT_ID = "673f00be0203ee001a70d41c"
-PLAID_SECRET = "5358ac364c20f629d50fcd7cb2018d"
-PLAID_ENV = "sandbox" 
 
 # REST Framework settings
 REST_FRAMEWORK = {

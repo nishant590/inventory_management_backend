@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Invoice</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+        .container{
+            width: 210mm;
+            height: 297mm;
+            background-color: white;
+            border: 1px solid rgb(77, 77, 77);
+            margin: auto;
+            
+        }
+        .bar{
+            width: 100%;
+            height: 24px;
+            background-color: #F29622;
+        }
+        .header{
+            display: flex;
+            justify-content: space-between;
+            margin-top: 20px;
+            padding: 0px 10px 0px 10px
+        }
+        .logo{
+            width: 142px;
+            height: 62px;
+        }
+        .h1{
+            font-weight: 600;
+            font-size: 30px;
+            color: #F29622;
+            margin-top: -2px;
+        }
+        .textMed{
+            font-weight: 600;
+            font-size: 20px;
+            color: black;
+            margin-top: -20px;
+            text-align: end;
+        }
+        .textsmall{
+            font-weight: 500;
+            font-size: 14px;
+            color: black;
+            margin-top: -5px;
+        }
+        .textsmall2{
+            font-weight: 600;
+            font-size: 14px;
+            color: black;
+            margin-top: -10px;
+        }
+        .invoiceNum{
+            display: flex;
+            flex-direction: column;
+            column-gap: 2px;
+        }
+        .subheader{
+            display: flex;
+            justify-content: space-between;
+            margin-top: 20px;
+            padding: 0px 20px 0px 20px
+        }
+        .h2{
+            font-weight: 700;
+            font-size: 24px;
+            color: #F29622;
+            margin-top: -20px;
+        }
+        .contactInfo{
+            display: flex;
+            flex-direction: column;
+        }
+        .links{
+            font-weight: 500;
+            font-size: 14px;
+            color: black;
+        }
+        .mob{
+            margin-top: -15px;
+        }
+        .mail{
+            margin-top: 5px;
+        }
+        .ainfo{
+            margin-top: -8px;
+        }
+        .thirdheader{
+            display: flex;
+            gap: 14px;
+            margin-top: 20px;
+            padding: 0px 20px 0px 20px
+        }
+        .billto{
+            width: 50%;
+            height: 150px;
+            padding: 6px 10px 6px 10px;
+            background-color: #FAFAFA;
+            border-radius: 3px;
+        }
+        th{
+            font-weight: 700;
+            font-size: 12px;
+            color: #FAFAFA;
+        }
+
+    </style>
+</head>
+<body>
+    <div style="position: relative;" class="container">
+        <div class="bar"></div>
+
+        <div class="header">
+            <div class="logo">
+               <img src="images/RPlogo.svg"/>
+            </div>
+
+            <div class="invoiceNum">
+                <p class="h1">Invoice</p>
+                <p class="textMed"> #{{ invoice.id }} </p>
+
+            </div>
+        </div>
+
+        <div class="subheader">
+            <div class="contactInfo">
+                <p class="h2">Radiant Planks</p>
+                <a href="tel:(832) 580-0385" class="links mob">(832) 580-0385</a>
+                <a href="mailto:Info@radiantplanks.com" class="links mail">Info@radiantplanks.com</a>
+            </div>
+            <div class="accountInfo">
+                <p class="ainfo"><b>Account No:-</b>&nbsp;&nbsp;1234566789 </p>
+                <p class="ainfo"><b>Account Holder's Name:-</b>&nbsp;&nbsp;Radiant Planks </p>
+                <p class="ainfo"><b>Bank Name:-</b>&nbsp;&nbsp;American Bank </p>
+                <p class="ainfo"><b>Branch Name:-</b>&nbsp;&nbsp;New Jersey </p>
+            </div>
+
+        </div>
+
+        <div class="thirdheader">
+            <div class="billto">
+               <p style="margin-top: 10px;" class="h2">Bill To</p>
+               <p class="textsmall2"> {{ customer.first_name }} {{ customer.last_name }} </p>
+               <p class="textsmall">{{ invoice.billing_address }}<br>
+                {{ customer.phone }}<br>
+                {{ customer.email }}</p>
+            </div>
+
+            <div class="billto">
+                <p style="margin-top: 10px;" class="h2">Ship To</p>
+                <p class="textsmall2"> {{ customer.first_name }} {{ customer.last_name }} </p>
+                <p class="textsmall">{{ invoice.shipping_address }}<br>
+                 {{ customer.phone }}<br>
+                 {{ customer.email }}</p>
+             </div>
+
+             <div class="billto">
+                <p style="margin-top: 10px;" class="h2">Details</p>
+                <div style="display: flex;flex-direction: row;justify-content: space-between;margin-top: -24px;">
+                    <p>Issue date </p>
+                    <p> {{ invoice.bill_date }} </p>
+                </div>
+                <div style="display: flex;flex-direction: row;justify-content: space-between;margin-top: -14px;">
+                    <p>Term </p>
+                    <p>{{ invoice.terms }}</p>
+                </div>
+                <div style="display: flex;flex-direction: row;justify-content: space-between;margin-top: -14px;">
+                    <p>Due date </p>
+                    <p>{{ invoice.due_date }}</p>
+                </div>
+             </div>
+
+        </div>
+
+        {% load static %}
+        <table style="width: 100%;padding-right: 20px;padding-left: 20px;margin-top: 20px;border-bottom: 2px solid rgb(151, 151, 151);">
+            <thead style="background-color: #F29622;height: 30px;">
+                <tr>
+                    <th>SR.</th>
+                    <th>COLOR</th>
+                    <th>SKU</th>
+                    <th>PRODUCT/SERVICE</th>
+                    <th>DESCRIPTION</th>
+                    <th>QTY</th>
+                    <th>RATE</th>
+                    <th>AMOUNT</th>
+                </tr>
+            </thead>
+ 
+            <tbody>
+                {% for item in items %}
+                <tr style="height: 30px;">
+                    <td style="text-align: center;font-weight: 600;font-size: 12px;color: black;">1</td>
+                    <td> <img src="{% static item.product_image %}" alt="Product Image" style="width: 25px; height: 25px; border-radius: 2px;"> </td>
+                    <td style="text-align: center;font-weight: 600;font-size: 12px;color: black;">{{ item.sku }}</td>
+                    <td style="text-align: center;font-weight: 500;font-size: 14px;color: black;"> {{ item.product }} </td>
+                    <td style="text-align: center;font-weight: 500;font-size: 14px;color: black;">{{ item.dim }}</td>
+                    <td style="text-align: center;font-weight: 500;font-size: 14px;color: black;"> {{ item.quantity }} </td>
+                    <td style="text-align: center;font-weight: 500;font-size: 14px;color: black;"> ${{ item.unit_price }} </td>
+                    <td style="text-align: center;font-weight: 500;font-size: 14px;color: black;"> ${{ item.total_price }} </td>
+                </tr>    
+                {% endfor %}    
+            </tbody>
+
+        </table>
+
+       <div style="position: absolute;bottom: 0;width: 100%;">
+
+        <div style="display: flex;justify-content: space-between;width: 90%;padding-left: 20px;padding-right: 10px;gap: 10px;margin-bottom: 40px;">
+            
+            <div style="width: 50%;">
+               <p style="font-weight: 700;font-size: 14px;color: black;">Terms & Conditions</p>
+               <p style="font-weight: 500;font-size: 12px;color: black;">{{ invoice.message_on_invoice }}.</p>
+               <!-- <p style="font-weight: 500;font-size: 12px;color: black;">Lorem ipsum dolor sit amet, consectetur adipiscing elit.</p> -->
+            </div>
+
+            <div style="width: 50%;align-self: flex-end;">
+                <div style="width: 80%;height: 20px;border-bottom: 1.5px solid rgb(151, 151, 151);"></div>
+                <p style="font-weight: 500;font-size: 12px;color: black;text-align: center;">Your Signature</p>
+            </div>
+
+            <div style="width: 50%;">
+               <div style="display: flex;justify-content: space-between;align-items: center;">
+                <p style="font-weight: 700;font-size: 14px;color: black;">Subtotal</p> <p style="font-weight: 500;font-size: 14px;color: black;">$1550</p>
+               </div>
+               <div style="display: flex;justify-content: space-between;align-items: center;margin-top: -20px;">
+                <p style="font-weight: 700;font-size: 14px;color: black;">Sales Tax (7.25%)</p> <p style="font-weight: 500;font-size: 14px;color: black;">$116.50</p>
+               </div>
+               <div style="display: flex;justify-content: space-between;align-items: center;margin-top: -20px;">
+                <p style="font-weight: 700;font-size: 14px;color: black;">Shipping</p> <p style="font-weight: 500;font-size: 14px;color: black;">$100</p>
+               </div>
+               <div style="display: flex;justify-content: space-between;align-items: center;margin-top: -20px;">
+                <p style="font-weight: 700;font-size: 14px;color: black;">Remaining</p> <p style="font-weight: 500;font-size: 14px;color: black;">$400</p>
+               </div>
+
+               <div style="display: flex;justify-content: space-between;align-items: center;margin-top: -5px;background-color: #F29622;padding-left: 5px;padding-right: 5px;">
+                <p style="font-weight: 700;font-size: 16px;color: #FAFAFA;">Total</p>
+                <p style="font-weight: 700;font-size: 16px;color: #FAFAFA;"> ${{ invoice.total_amount }} </p>
+               </div>
+
+            </div>
+        </div>
+
+        <div class="bar"></div>
+      </div>
+    </div>
+
+</body>
+</html>

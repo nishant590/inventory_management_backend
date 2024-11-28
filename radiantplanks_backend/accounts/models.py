@@ -4,6 +4,7 @@ from decimal import Decimal
 from authentication.models import NewUser
 from datetime import datetime, timedelta
 from django.http import JsonResponse
+from customers.models import Customer
 from django.conf import settings
 # Create your models here.
 
@@ -118,3 +119,12 @@ class TransactionLine(models.Model):
     class Meta:
         ordering = ['id']
 
+
+class ReceivableTracking(models.Model):
+    customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name="receivables")
+    receivable_amount = models.DecimalField(max_digits=15, decimal_places=2, default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.customer.name} - {self.receivable_amount}"
