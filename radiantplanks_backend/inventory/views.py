@@ -889,7 +889,7 @@ class CreateInvoiceView(APIView):
             return Response({"invoice_id": invoice.id, "message": "Invoice created successfully."}, status=status.HTTP_201_CREATED)
 
         except Exception as e:
-            logger.trace("Error occured", exc_info=True)
+            logger.exception("Error occured", exc_info=True)
             return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
 
@@ -1186,7 +1186,7 @@ class CreateBillView(APIView):
             return Response({"invoice_id": bill.bill_number, "message": "Bill created successfully."}, status=status.HTTP_201_CREATED)
 
         except Exception as e:
-            logger.trace("Error occured", exc_info=True)
+            logger.exception("Error occured", exc_info=True)
             return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
