@@ -26,7 +26,6 @@ from django.core.mail import EmailMessage
 from accounts.models import Account, Transaction, TransactionLine, ReceivableTracking
 from django.template.loader import render_to_string
 import math
-from loguru import logger
 import uuid
 import time
 from decimal import Decimal
@@ -37,6 +36,10 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 import base64
 from django.db.models import Max
+import logging
+
+# Get the default logger
+logger = logging.getLogger('custom_logger')
 # Category Views
 
 # config_path = pdfkit.configuration(wkhtmltopdf='C:/Program Files/wkhtmltopdf/bin/wkhtmltopdf.exe')
@@ -100,59 +103,70 @@ def add_inventory_transaction(product_name, quantity, unit_cost, inventory_accou
 
             # Update inventory account balance
             inventory_account.balance += total_cost
-            owner_equity_account -= total_cost
+            owner_equity_account.balance -= total_cost
             inventory_account.save()
             owner_equity_account.save()
+            logger.info("Inventory Transaction Success")
             return True
     except Exception as e:
+        logger.exception("Error occures",exc_info=True)
         return False
     
 def create_invoice_transaction(customer, products, total_amount, user):
     """
     Adjust inventory and create account receivable for the invoice.
     """
-    inventory_account = Account.objects.get(code='INV-001')  # Inventory account
-    receivable_account = Account.objects.get(code='AR-001')  # Accounts Receivable account
-    
-    # Create a new transaction
-    transaction = Transaction.objects.create(
-        reference_number=f"INV-{uuid.uuid4().hex[:6].upper()}",
-        transaction_type='income',
-        date=datetime.now(),
-        description=f"Invoice for customer {customer.name}",
-        created_by=user  # Assuming you have request context
-    )
-
-    # Adjust inventory and add account receivable
-    for product in products:
-        product_name = product["name"]
-        quantity = product["quantity"]
-        unit_cost = product["unit_cost"]
-        total_cost = quantity * unit_cost
+    try:
+        inventory_account = Account.objects.get(code='INV-001')  # Inventory account
+        receivable_account = Account.objects.get(code='AR-001')  # Accounts Receivable account
         
-        # Deduct inventory (credit inventory account)
+        # Create a new transaction
+        transaction = Transaction.objects.create(
+            reference_number=f"INV-{uuid.uuid4().hex[:6].upper()}",
+            transaction_type='income',
+            date=datetime.now(),
+            description=f"Invoice for customer {customer.display_name}",
+            created_by=user  # Assuming you have request context
+        )
+        inv_total_cost = 0
+        # Adjust inventory and add account receivable
+        for product in products:
+            product_name = product.get("product_name")
+            quantity = Decimal(product.get("quantity"))
+            unit_cost = Decimal(product.get("unit_price"))
+            temp_total_cost = quantity * unit_cost
+            inv_total_cost += temp_total_cost
+            # Deduct inventory (credit inventory account)
+            TransactionLine.objects.create(
+                transaction=transaction,
+                account=inventory_account,
+                description=f"Inventory adjustment for {product_name}",
+                debit_amount=0,
+                credit_amount=temp_total_cost,
+            )
+
+        # Add receivable (debit receivables account)
         TransactionLine.objects.create(
             transaction=transaction,
-            account=inventory_account,
-            description=f"Inventory adjustment for {product_name}",
-            debit_amount=0,
-            credit_amount=total_cost,
+            account=receivable_account,
+            description=f"Account receivable for invoice to {customer.display_name}",
+            debit_amount=total_amount,
+            credit_amount=0,
         )
 
-    # Add receivable (debit receivables account)
-    TransactionLine.objects.create(
-        transaction=transaction,
-        account=receivable_account,
-        description=f"Account receivable for invoice to {customer.name}",
-        debit_amount=total_amount,
-        credit_amount=0,
-    )
-
-    # Update receivable tracking
-    receivable, created = ReceivableTracking.objects.get_or_create(customer=customer)
-    receivable.receivable_amount += total_amount
-    receivable.save()
-
+        # Update receivable tracking
+        receivable, created = ReceivableTracking.objects.get_or_create(customer=customer)
+        receivable.receivable_amount += Decimal(total_amount)
+        inventory_account.balance -= Decimal(inv_total_cost)
+        receivable_account.balance += Decimal(total_amount)
+        receivable.save()
+        inventory_account.save()
+        receivable_account.save()
+        logger.info("Invoice Transaction completed") 
+        return True
+    except Exception as e:
+        logger.exception("Error occured:", exc_info=True)
+        return False   
 
 def process_payment(customer, payment_amount, user):
     """
@@ -516,11 +530,11 @@ class ProductCreateView(APIView):
                 inventory_account = inventory_account,
                 income_account = income_account
             )
-            # inventory_add = add_inventory_transaction(product_name = product_name, 
-            #                                           quantity = stock_quantity, 
-            #                                           unit_cost = purchase_price, 
-            #                                           inventory_account = inventory_account, 
-            #                                           created_by = user)
+            inventory_add = add_inventory_transaction(product_name = product_name, 
+                                                      quantity = stock_quantity, 
+                                                      unit_cost = purchase_price, 
+                                                      inventory_account = inventory_account, 
+                                                      created_by = user)
 
         return Response({
             "id": product.id,
@@ -734,6 +748,7 @@ class ProductDeleteView(APIView):
 
         return Response({"detail": "Product deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
 
+
 class GetLatestInvoiceId(APIView):
     def get(self, request):
         """
@@ -746,6 +761,7 @@ class GetLatestInvoiceId(APIView):
             return Response({'latest_invoice_id': new_invoice_id}, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)      
+
 
 class CreateInvoiceView(APIView):
     def post(self, request):
@@ -821,6 +837,7 @@ class CreateInvoiceView(APIView):
                 )
 
                 # Process each item in the invoice
+                transaction_products = []
                 for item_data in items:
                     product = Product.objects.get(id=item_data['product_id'])
                     quantity = float(item_data['quantity'])
@@ -844,6 +861,9 @@ class CreateInvoiceView(APIView):
 
                     # Deduct stock and calculate the line total
                     product.stock_quantity -= quantity_in_tiles
+                    transaction_products.append({'quantity': quantity_in_tiles, 
+                                                  "product_name": product.product_name,
+                                                  "unit_price": product.purchase_price})
                     product.save()
                     line_total = unit_price * quantity_in_tiles
 
@@ -863,6 +883,8 @@ class CreateInvoiceView(APIView):
                 # Update the invoice's total amount after processing all items
                 # invoice.total_amount = total_amount
                 invoice.save()
+                invoice_transactions = create_invoice_transaction(customer=customer, 
+                                    products=transaction_products, total_amount=total_amount, user=request.user)
 
             return Response({"invoice_id": invoice.id, "message": "Invoice created successfully."}, status=status.HTTP_201_CREATED)
 
@@ -1083,14 +1105,7 @@ class CreateBillView(APIView):
                 terms = data.get("terms")
                 bill_date = data.get("bill_date")
                 due_date = data.get("due_date")
-                # message_on_invoice = data.get("message_on_invoice")
-                # message_on_statement = data.get("message_on_statement")
-                # sum_amount = float(data.get("sum_amount"))
-                # is_taxed = data.get("is_taxed")
-                # if isinstance(is_taxed, str):
-                #     is_taxed = is_taxed.lower() in ['true', '1', 'yes', 'y']
-                # tax_percentage = float(data.get("tax_percentage"))
-                # tax_amount = float(data.get("tax_amount"))
+                memo = data.get("memo")
                 total_amount = float(data.get("total_amount"))
                 is_paid = data.get("is_paid")
                 if isinstance(is_paid, str):
@@ -1114,7 +1129,8 @@ class CreateBillView(APIView):
                     terms = terms,
                     bill_number = bill_number,
                     bill_date = bill_date, 
-                    due_date = due_date,  
+                    due_date = due_date,
+                    memo = memo,
                     is_paid = is_paid,
                     total_amount=total_amount,
                     attachments=attachments_url,
