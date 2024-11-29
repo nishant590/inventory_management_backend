@@ -174,7 +174,7 @@ class EstimateItem(models.Model):
 class Bill(models.Model):
     vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE)
     mailing_address = models.TextField(null=True, blank=True)
-    bill_number = models.CharField(max_length=255, unique=True, null=True, blank=True)
+    bill_number = models.CharField(max_length=255, null=True, blank=True)
     tags = models.CharField(max_length=255, null=True, blank=True)
     terms = models.TextField(null=True, blank=True)
     bill_date = models.DateTimeField(default=timezone.now)
