@@ -30,6 +30,7 @@ media/
 inv_env/
 ENV/
 .env
+venv
 
 # IDE
 .idea/
