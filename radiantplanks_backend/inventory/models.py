@@ -205,4 +205,4 @@ class BillItems(models.Model):
         return self.unit_price * self.quantity
 
     def __str__(self):
-        return f"Item {self.id} - Invoice {self.invoice_id} - Product {self.product_id}"
+        return f"Item {self.id} - bill {self.bill} - Product {self.product_id}"

@@ -17,7 +17,7 @@ logger = logging.getLogger('custom_logger')
 # trace_logger = logging.getLogger('trace_logger')
 
 class RegisterAPIView(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
     def post(self, request):
         data = request.data
         email = data.get('email')

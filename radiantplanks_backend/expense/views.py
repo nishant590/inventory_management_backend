@@ -164,3 +164,97 @@ class CreateExpenseView(APIView):
             return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+class ExpenseListView(APIView):
+    permission_classes = [IsAuthenticated]
+    def get_user_from_token(self, request):
+        token = request.headers.get("Authorization", "").split(" ")[1]
+        try:
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+            user_id = payload.get("user_id")
+            user = NewUser.objects.get(id=user_id)
+            return user
+        except (jwt.ExpiredSignatureError, jwt.DecodeError, NewUser.DoesNotExist):
+            return None
+        
+    def get(self, request):
+        user = self.get_user_from_token(request)
+        if not user:
+            logger.error("User not found")
+            return Response({"detail": "User not found"}, status=status.HTTP_401_UNAUTHORIZED)
+        expenses = Expense.objects.filter(is_active=True).order_by('-created_date')
+        try:
+            expense_list = [
+                {
+                    "id": expense.id,
+                    "vendor": expense.vendor.display_name,  # Assuming the vendor has a `name` field
+                    "expense_number": expense.expense_number,
+                    "payment_date": expense.payment_date,
+                    "total_amount": float(expense.total_amount),
+                    "is_paid": expense.is_paid,
+                    "created_date": expense.created_date,
+                }
+                for expense in expenses
+            ]
+            return Response(expense_list, status=status.HTTP_200_OK)
+        except Exception as e:
+            logger.exception("Error occured", exc_info=True)
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ExpenseDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+    def get_user_from_token(self, request):
+        token = request.headers.get("Authorization", "").split(" ")[1]
+        try:
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+            user_id = payload.get("user_id")
+            user = NewUser.objects.get(id=user_id)
+            return user
+        except (jwt.ExpiredSignatureError, jwt.DecodeError, NewUser.DoesNotExist):
+            return None
+
+    def get_object(self, id):
+        try:
+            return Expense.objects.get(id=id, is_active=True)
+        except Expense.DoesNotExist:
+            return Response("Expense does not exist", status=status.HTTP_404_NOT_FOUND)
+
+    def get(self, request, id):
+        user = self.get_user_from_token(request)
+        if not user:
+            logger.error("User not found")
+            return Response({"detail": "User not found"}, status=status.HTTP_401_UNAUTHORIZED)
+        expense = self.get_object(id)
+        if not expense:
+            logger.error("Expense not found")
+            return Response("Expense does not exist", status=status.HTTP_404_NOT_FOUND)
+        try:
+            items = ExpenseItems.objects.filter(expense=expense)
+            expense_data = {
+                "id": expense.id,
+                "vendor": expense.vendor.display_name,  # Assuming the vendor has a `name` field
+                "expense_number": expense.expense_number,
+                "payment_date": expense.payment_date,
+                "total_amount": float(expense.total_amount),
+                "is_paid": expense.is_paid,
+                "memo": expense.memo,
+                "tags": expense.tags,
+                "attachments": expense.attachments,
+                "items": [
+                    {
+                        "account": item.account.name,  # Assuming account has a `name` field
+                        "price": float(item.price),
+                        "description": item.description,
+                    }
+                    for item in items
+                ],
+                "created_date": expense.created_date,
+                "updated_date": expense.updated_date,
+            }
+
+            return Response(expense_data, status=status.HTTP_200_OK)
+        except Exception as e:
+            logger.error(f"Error fetching expense data: {e}")
+            logger.exception(f"Error:", exc_info=True)
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
