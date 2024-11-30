@@ -198,9 +198,9 @@ class VendorCreateView(APIView):
             errors['addresses'] = "At least one address is required."
         else:
             for i, addr in enumerate(addresses_data):
-                if 'address_type' not in addr or addr['address_type'] not in ['billing', 'shipping']:
-                    errors[f'addresses[{i}]'] = "Address type must be 'billing' or 'shipping'."
-                if 'street' not in addr:
+                if 'address_type' not in addr or addr['address_type'] not in ['Billing', 'Shipping', 'Billing and Shipping']:
+                    errors[f'addresses[{i}]'] = "Address type must be 'Billing' or 'Shipping' or 'Billing and Shipping'."
+                if 'street_add_1' not in addr or 'street_add_2' not in addr:
                     errors[f'addresses[{i}][street]'] = "Street is required."
 
         if errors:
@@ -229,7 +229,8 @@ class VendorCreateView(APIView):
                     VendorAddress.objects.create(
                         vendor=vendor,
                         address_type=addr_data['address_type'],
-                        street=addr_data['street'],
+                        street_add_1=addr_data['street_add_1'],
+                        street_add_2=addr_data['street_add_2'],
                         city=addr_data.get('city', ''),
                         state=addr_data.get('state', ''),
                         postal_code=addr_data.get('postal_code', ''),
@@ -299,7 +300,8 @@ class VendorEditView(APIView):
                 VendorAddress.objects.create(
                     vendor=vendor,
                     address_type=addr_data['address_type'],
-                    street=addr_data['street'],
+                    street_add_1=addr_data['street_add_1'],
+                    street_add_2=addr_data['street_add_2'],
                     city=addr_data.get('city', ''),
                     state=addr_data.get('state', ''),
                     postal_code=addr_data.get('postal_code', ''),
