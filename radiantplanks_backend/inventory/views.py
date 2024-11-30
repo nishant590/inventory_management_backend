@@ -893,6 +893,80 @@ class CreateInvoiceView(APIView):
             return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
 
+class ListInvoicesView(APIView):
+    def get_user_from_token(self, request):
+        token = request.headers.get("Authorization", "").split(" ")[1]
+        try:
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+            user_id = payload.get("user_id")
+            return NewUser.objects.get(id=user_id)
+        except (jwt.ExpiredSignatureError, jwt.DecodeError, NewUser.DoesNotExist):
+            return None
+
+    def get(self, request):
+        user = self.get_user_from_token(request)
+        if not user:
+            return Response({"detail": "Invalid or expired token."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        invoices = Invoice.objects.filter(is_active=True).values(
+            "id", "customer__display_name", "total_amount", "bill_date", "due_date", "is_paid"
+        )
+        invoice_list = list(invoices)  # Convert queryset to list of dicts
+        return Response(invoice_list, status=status.HTTP_200_OK)
+
+
+class RetrieveInvoiceView(APIView):
+    def get_user_from_token(self, request):
+        token = request.headers.get("Authorization", "").split(" ")[1]
+        try:
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+            user_id = payload.get("user_id")
+            return NewUser.objects.get(id=user_id)
+        except (jwt.ExpiredSignatureError, jwt.DecodeError, NewUser.DoesNotExist):
+            return None
+        
+    def get(self, request, id):
+        try:
+            user = self.get_user_from_token(request)
+            invoice = Invoice.objects.get(id=id, is_active=True)
+            invoice_items = InvoiceItem.objects.filter(invoice=invoice).values(
+                "product__id", "product__product_name", "quantity", "unit_price", "description"
+            )
+
+            invoice_data = {
+                "id": invoice.id,
+                "customer": invoice.customer.display_name,
+                "customer_email": invoice.customer_email,
+                "customer_email_cc": invoice.customer_email_cc,
+                "customer_email_bcc": invoice.customer_email_bcc,
+                "billing_address": invoice.billing_address,
+                "shipping_address": invoice.shipping_address,
+                "tags": invoice.tags,
+                "terms": invoice.terms,
+                "bill_date": invoice.bill_date,
+                "due_date": invoice.due_date,
+                "message_on_invoice": invoice.message_on_invoice,
+                "message_on_statement": invoice.message_on_statement,
+                "sum_amount": invoice.sum_amount,
+                "is_taxed": invoice.is_taxed,
+                "tax_percentage": invoice.tax_percentage,
+                "tax_amount": invoice.tax_amount,
+                "total_amount": invoice.total_amount,
+                "is_paid": invoice.is_paid,
+                "attachments": invoice.attachments,
+                "created_date": invoice.created_date,
+                "items": list(invoice_items),
+            }
+            return Response(invoice_data, status=status.HTTP_200_OK)
+
+        except Invoice.DoesNotExist:
+            logger.exception("Invoice does not exist", exc_info=True)
+            return Response({"detail": "Invoice not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.exception("Error retrieving invoice", exc_info=True)
+            return Response({"detail": "Error retrieving invoice."}, status=status.HTTP_400_BAD_REQUEST)
+
+
 class SendInvoiceView(APIView):
     def post(self, request, invoice_id):
         try:
@@ -1188,5 +1262,62 @@ class CreateBillView(APIView):
         except Exception as e:
             logger.exception("Error occured", exc_info=True)
             return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ListBillsView(APIView):
+    def get_user_from_token(self, request):
+        token = request.headers.get("Authorization", "").split(" ")[1]
+        try:
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+            user_id = payload.get("user_id")
+            return NewUser.objects.get(id=user_id)
+        except (jwt.ExpiredSignatureError, jwt.DecodeError, NewUser.DoesNotExist):
+            return None
+
+    def get(self, request):
+        user = self.get_user_from_token(request)
+        if not user:
+            return Response({"detail": "Invalid or expired token."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        bills = Bill.objects.filter(is_active=True).values(
+            "bill_number", "vendor__display_name", "total_amount", "bill_date", "due_date", "is_paid"
+        )
+        bill_list = list(bills)  # Convert queryset to list of dicts
+        return Response(bill_list, status=status.HTTP_200_OK)
+
+
+class RetrieveBillView(APIView):
+    def get_user_from_token(self, request):
+        token = request.headers.get("Authorization", "").split(" ")[1]
+        try:
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+            user_id = payload.get("user_id")
+            return NewUser.objects.get(id=user_id)
+        except (jwt.ExpiredSignatureError, jwt.DecodeError, NewUser.DoesNotExist):
+            return None
+
+    def get(self, request, id):
+        user = self.get_user_from_token(request)
+        if not user:
+            return Response({"detail": "Invalid or expired token."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            bill = Bill.objects.get(id=id, is_active=True)
+            items = BillItems.objects.filter(bill=bill).values(
+                "product__id", "product__product_name", "quantity", "unit_price", "description"
+            )
+            bill_data = {
+                "bill_number": bill.bill_number,
+                "vendor": bill.vendor.display_name,
+                "bill_date": bill.bill_date,
+                "due_date": bill.due_date,
+                "total_amount": bill.total_amount,
+                "is_paid": bill.is_paid,
+                "attachments": bill.attachments,
+                "items": list(items)
+            }
+            return Response(bill_data, status=status.HTTP_200_OK)
+        except Bill.DoesNotExist:
+            return Response({"detail": "Bill not found."}, status=status.HTTP_404_NOT_FOUND)
 
 

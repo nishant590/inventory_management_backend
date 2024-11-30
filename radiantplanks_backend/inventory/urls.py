@@ -9,9 +9,13 @@ from .views import (CategoryListCreateView,
                     ProductUpdateView,
                     ProductDeleteView,
                     CreateInvoiceView,
+                    ListInvoicesView,
+                    RetrieveInvoiceView,
                     GetLatestInvoiceId,
                     SendInvoiceView,
-                    CreateBillView,)
+                    CreateBillView,
+                    ListBillsView,
+                    RetrieveBillView)
 
 urlpatterns = [
     # Category URLs
@@ -30,7 +34,11 @@ urlpatterns = [
 
     path('invoice/getid/', GetLatestInvoiceId.as_view(), name='invoice-get'),
     path('invoice/create/', CreateInvoiceView.as_view(), name='invoice-create'),
+    path('invoice/', ListInvoicesView.as_view(), name='invoice-create'),
+    path('invoice/retrive/<int:id>/', RetrieveInvoiceView.as_view(), name='invoice-create'),
     path('invoice/send/<int:invoice_id>/', SendInvoiceView.as_view(), name='invoice-send'),
     path('bill/create/', CreateBillView.as_view(), name='bill-create'),
+    path('bill/', ListBillsView.as_view(), name='bill-list'),
+    path('bill/retrive/<int:id>/', RetrieveBillView.as_view(), name='bill-get'),
     
 ]
