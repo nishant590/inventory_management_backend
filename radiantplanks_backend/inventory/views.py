@@ -1393,7 +1393,7 @@ class ListBillsView(APIView):
         if not user:
             return Response({"detail": "Invalid or expired token."}, status=status.HTTP_401_UNAUTHORIZED)
 
-        bills = Bill.objects.filter(is_active=True).values(
+        bills = Bill.objects.filter(is_active=True).values("id",
             "bill_number", "vendor__display_name", "vendor__email",  "total_amount", "bill_date", "due_date", "is_paid"
         )
         bill_list = list(bills)  # Convert queryset to list of dicts
