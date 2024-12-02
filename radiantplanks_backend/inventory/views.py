@@ -84,8 +84,8 @@ def add_inventory_transaction(product_name, quantity, unit_cost, inventory_accou
                 transaction=transaction,
                 account=inventory_account,
                 description=f"Inventory addition for {product_name}",
-                debit_amount=total_cost,
-                credit_amount=0,
+                debit_amount=0,
+                credit_amount=total_cost,
             )
 
             # Credit: Assume it's an owner's equity or cash account (to offset the inventory addition)
@@ -97,8 +97,8 @@ def add_inventory_transaction(product_name, quantity, unit_cost, inventory_accou
                 transaction=transaction,
                 account=owner_equity_account,
                 description=f"Fund allocation for inventory addition of {product_name}",
-                debit_amount=0,
-                credit_amount=total_cost,
+                debit_amount=total_cost,
+                credit_amount=0,
             )
 
             # Update inventory account balance
@@ -180,7 +180,7 @@ def process_payment(customer, payment_amount, user):
         reference_number=f"PAY-{uuid.uuid4().hex[:6].upper()}",
         transaction_type='income',
         date=datetime.now(),
-        description=f"Payment received from {customer.name}",
+        description=f"Payment received from {customer.display_name}",
         created_by=user  # Assuming you have request context
     )
 
@@ -188,7 +188,7 @@ def process_payment(customer, payment_amount, user):
     TransactionLine.objects.create(
         transaction=transaction,
         account=bank_account,
-        description=f"Payment received from {customer.name}",
+        description=f"Payment received from {customer.display_name}",
         debit_amount=payment_amount,
         credit_amount=0,
     )
@@ -197,7 +197,7 @@ def process_payment(customer, payment_amount, user):
     TransactionLine.objects.create(
         transaction=transaction,
         account=receivable_account,
-        description=f"Clear receivable for {customer.name}",
+        description=f"Clear receivable for {customer.display_name}",
         debit_amount=0,
         credit_amount=payment_amount,
     )

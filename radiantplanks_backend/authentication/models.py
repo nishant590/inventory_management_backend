@@ -21,6 +21,7 @@ class NewGroup(models.Model):
     def __str__(self):
         return self.name
 
+
 class NewUser(models.Model):
     email = models.EmailField(unique=True)
     last_login_ip = models.GenericIPAddressField(null=True, blank=True)
