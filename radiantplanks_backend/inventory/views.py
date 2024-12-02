@@ -23,7 +23,7 @@ from io import BytesIO
 from customers.models import Customer, Vendor
 from django.utils import timezone
 from django.core.mail import EmailMessage
-from accounts.models import Account, Transaction, TransactionLine, ReceivableTracking
+from accounts.models import Account, Transaction, TransactionLine, ReceivableTracking, PayableTracking
 from django.template.loader import render_to_string
 import math
 import uuid
@@ -206,6 +206,88 @@ def process_payment(customer, payment_amount, user):
     receivable = ReceivableTracking.objects.get(customer=customer)
     receivable.receivable_amount -= payment_amount
     receivable.save()
+
+
+def create_bill_transaction(vendor, products, total_amount, user, is_paid):
+    """
+    Adjust inventory and create accounts payable for the bill.
+    If paid, do not increase accounts payable and reduce bank balance.
+    """
+    try:
+        inventory_account = Account.objects.get(code='INV-001')  # Inventory account
+        payable_account = Account.objects.get(code='AP-001')  # Accounts Payable account
+        bank_account = Account.objects.get(code='BANK-001')  # Main Bank Account
+
+        # Create a new transaction
+        transaction = Transaction.objects.create(
+            reference_number=f"BILL-{uuid.uuid4().hex[:6].upper()}",
+            transaction_type='expense',
+            date=datetime.now(),
+            description=f"Bill for vendor {vendor.name}",
+            created_by=user
+        )
+
+        inv_total_cost = 0
+
+        # Adjust inventory and handle accounts payable
+        for product in products:
+            product_name = product.get("product_name")
+            quantity = Decimal(product.get("quantity"))
+            unit_cost = Decimal(product.get("unit_price"))
+            temp_total_cost = quantity * unit_cost
+            inv_total_cost += temp_total_cost
+
+            # Add inventory (debit inventory account)
+            TransactionLine.objects.create(
+                transaction=transaction,
+                account=inventory_account,
+                description=f"Inventory addition for {product_name}",
+                debit_amount=temp_total_cost,
+                credit_amount=0,
+            )
+
+        if not is_paid:
+            # Add payable (credit accounts payable account)
+            TransactionLine.objects.create(
+                transaction=transaction,
+                account=payable_account,
+                description=f"Accounts payable for bill to {vendor.name}",
+                debit_amount=0,
+                credit_amount=total_amount,
+            )
+
+            # Update payable tracking
+            payable, created = PayableTracking.objects.get_or_create(vendor=vendor)
+            payable.payable_amount += Decimal(total_amount)
+            payable.save()
+        else:
+            # Reduce bank balance (credit bank account)
+            TransactionLine.objects.create(
+                transaction=transaction,
+                account=bank_account,
+                description=f"Payment for bill to {vendor.name}",
+                debit_amount=0,
+                credit_amount=total_amount,
+            )
+
+            # Update bank account balance
+            bank_account.balance -= Decimal(total_amount)
+
+        # Update account balances
+        inventory_account.balance += Decimal(inv_total_cost)
+        if not is_paid:
+            payable_account.balance += Decimal(total_amount)
+
+        inventory_account.save()
+        payable_account.save()
+        bank_account.save()
+
+        logger.info("Bill Transaction completed")
+        return True
+    except Exception as e:
+        logger.exception("Error occurred while creating bill transaction:", exc_info=True)
+        return False
+
 
 
 class CategoryListCreateView(APIView):
@@ -909,7 +991,7 @@ class ListInvoicesView(APIView):
             return Response({"detail": "Invalid or expired token."}, status=status.HTTP_401_UNAUTHORIZED)
 
         invoices = Invoice.objects.filter(is_active=True).values(
-            "id", "customer__display_name", "total_amount", "bill_date", "due_date", "is_paid"
+            "id", "customer__display_name", "customer_email", "total_amount", "bill_date", "due_date", "is_paid"
         )
         invoice_list = list(invoices)  # Convert queryset to list of dicts
         return Response(invoice_list, status=status.HTTP_200_OK)
@@ -958,6 +1040,38 @@ class RetrieveInvoiceView(APIView):
                 "items": list(invoice_items),
             }
             return Response(invoice_data, status=status.HTTP_200_OK)
+
+        except Invoice.DoesNotExist:
+            logger.exception("Invoice does not exist", exc_info=True)
+            return Response({"detail": "Invoice not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.exception("Error retrieving invoice", exc_info=True)
+            return Response({"detail": "Error retrieving invoice."}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class InvoicePaidView(APIView):
+    def get_user_from_token(self, request):
+        token = request.headers.get("Authorization", "").split(" ")[1]
+        try:
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+            user_id = payload.get("user_id")
+            return NewUser.objects.get(id=user_id)
+        except (jwt.ExpiredSignatureError, jwt.DecodeError, NewUser.DoesNotExist):
+            return None
+        
+    def patch(self, request, id):
+        try:
+            user = self.get_user_from_token(request)
+            is_paid = request.data.get('is_paid')
+            if is_paid:
+                invoice = Invoice.objects.get(id=id, is_active=True)
+                if invoice.is_paid:
+                    return Response("Invoice is already paid", status=status.HTTP_200_OK)
+                invoice.is_paid = True
+                invoice.save()
+                return Response("Invoice is paid", status=status.HTTP_200_OK)
+            else:
+                return Response("No changes done", status=status.HTTP_200_OK)
 
         except Invoice.DoesNotExist:
             logger.exception("Invoice does not exist", exc_info=True)
@@ -1280,7 +1394,7 @@ class ListBillsView(APIView):
             return Response({"detail": "Invalid or expired token."}, status=status.HTTP_401_UNAUTHORIZED)
 
         bills = Bill.objects.filter(is_active=True).values(
-            "bill_number", "vendor__display_name", "total_amount", "bill_date", "due_date", "is_paid"
+            "bill_number", "vendor__display_name", "vendor__email",  "total_amount", "bill_date", "due_date", "is_paid"
         )
         bill_list = list(bills)  # Convert queryset to list of dicts
         return Response(bill_list, status=status.HTTP_200_OK)
@@ -1321,3 +1435,33 @@ class RetrieveBillView(APIView):
             return Response({"detail": "Bill not found."}, status=status.HTTP_404_NOT_FOUND)
 
 
+class BillPaidView(APIView):
+    def get_user_from_token(self, request):
+        token = request.headers.get("Authorization", "").split(" ")[1]
+        try:
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+            user_id = payload.get("user_id")
+            return NewUser.objects.get(id=user_id)
+        except (jwt.ExpiredSignatureError, jwt.DecodeError, NewUser.DoesNotExist):
+            return None
+        
+    def patch(self, request, id):
+        try:
+            user = self.get_user_from_token(request)
+            is_paid = request.data.get('is_paid')
+            if is_paid:
+                bill = Bill.objects.get(id=id, is_active=True)
+                if bill.is_paid:
+                    return Response("bill is already paid", status=status.HTTP_200_OK)
+                bill.is_paid = True
+                bill.save()
+                return Response("bill is paid", status=status.HTTP_200_OK)
+            else:
+                return Response("No changes done", status=status.HTTP_200_OK)
+
+        except bill.DoesNotExist:
+            logger.exception("bill does not exist", exc_info=True)
+            return Response({"detail": "bill not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.exception("Error retrieving bill", exc_info=True)
+            return Response({"detail": "Error retrieving bill."}, status=status.HTTP_400_BAD_REQUEST)
