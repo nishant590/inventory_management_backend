@@ -10,6 +10,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from .models import Category
 from authentication.models import NewUser
+from django.http import FileResponse
 from accounts.models import Account
 import posixpath
 from django.core.files.storage import FileSystemStorage
@@ -1081,6 +1082,113 @@ class InvoicePaidView(APIView):
             return Response({"detail": "Error retrieving invoice."}, status=status.HTTP_400_BAD_REQUEST)
 
 
+# class SendInvoiceView(APIView):
+#     def post(self, request, invoice_id):
+#         try:
+#             # Fetch the invoice and related items
+#             invoice = Invoice.objects.get(id=invoice_id)
+#             items = InvoiceItem.objects.filter(invoice=invoice)
+
+#             # Prepare data for template rendering
+#             items_data = [
+#                 {
+#                     "product_image": item.product.images if item.product.images else None,
+#                     "product": item.product.product_name,
+#                     "sku": item.product.sku,
+#                     "dim": f"{item.product.tile_length} x {item.product.tile_width}",
+#                     "quantity": item.quantity,
+#                     "unit_type": "box",
+#                     "unit_price": item.unit_price,
+#                     "total_price": item.unit_price * item.quantity,
+#                 }
+#                 for item in items
+#             ]
+#             context = {
+#                 "invoice": invoice,
+#                 "customer": invoice.customer,
+#                 "items": items_data
+#             }
+
+#             # Render the HTML template
+#             html_string = render_to_string("invoice_template.html", context)
+            
+#         except Invoice.DoesNotExist:
+#             return Response({"detail": "Invoice not found."}, status=status.HTTP_404_NOT_FOUND)
+#         except Exception as e:
+#             print(traceback.format_exc())
+#             return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+#         try:
+#             chrome_options = Options()
+#             chrome_options.add_argument("--headless")
+#             chrome_options.add_argument("--disable-gpu")
+#             chrome_options.add_argument("--no-sandbox")
+#             chrome_options.add_argument("--disable-dev-shm-usage")
+
+#             # Initialize webdriver
+#             driver = webdriver.Chrome(options=chrome_options)
+
+#             # Use a local HTML file instead of trying to reverse a URL
+#             # Save the HTML to a temporary file
+#             pdf_folder = os.path.join(settings.MEDIA_ROOT, 'pdfs')
+#             os.makedirs(pdf_folder, exist_ok=True)
+            
+#             temp_html_path = os.path.join(pdf_folder, f"Invoice_{invoice.id}.html")
+#             with open(temp_html_path, 'w', encoding='utf-8') as f:
+#                 f.write(html_string)
+
+#             # Navigate to the local file
+#             driver.get(f"file://{temp_html_path}")
+
+#             # Wait for page to load (adjust as needed)
+#             driver.implicitly_wait(10)
+
+#             # Generate unique filename
+#             unique_filename = f"Invoice_{invoice.id}.pdf"
+#             pdf_path = os.path.join(pdf_folder, unique_filename)
+
+#             # Print page to PDF
+#             print_options = {
+#                 'landscape': False,
+#                 'paperWidth': 8.27,  # A4 width in inches
+#                 'paperHeight': 11.69,  # A4 height in inches
+#                 'marginTop': 0.39,
+#                 'marginBottom': 0.39,
+#                 'marginLeft': 0.39,
+#                 'marginRight': 0.39,
+#             }
+#             pdf_data = driver.execute_cdp_cmd('Page.printToPDF', print_options)
+            
+#             # Save PDF
+#             with open(pdf_path, 'wb') as f:
+#                 f.write(base64.b64decode(pdf_data['data']))
+
+#             # Close the driver
+#             driver.quit()
+
+#         except Exception as e:
+#             print(traceback.format_exc())
+#             return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+#         with open(pdf_path, 'rb') as pdf_file:
+#             # Compose and send email
+#             email = EmailMessage(
+#                 subject=f"Invoice #{invoice.id}",
+#                 body="Please find attached your invoice.",
+#                 from_email=settings.DEFAULT_FROM_EMAIL,
+#                 to=[invoice.customer.email],
+#             )
+#             email.attach(f"Invoice_{invoice.id}.pdf", pdf_file.read(), "application/pdf")
+            
+#             try:
+#                 email.send()
+#                 return Response({"message": "Invoice sent successfully"}, status=status.HTTP_200_OK)
+#             except Exception as e:
+#                 # Log the error
+#                 print(f"Email sending failed: {e}")
+#                 return Response({"message": "Error in sending mail please check the customer email"}, status=status.HTTP_400_BAD_REQUEST)
+
+
 class SendInvoiceView(APIView):
     def post(self, request, invoice_id):
         try:
@@ -1105,87 +1213,135 @@ class SendInvoiceView(APIView):
             context = {
                 "invoice": invoice,
                 "customer": invoice.customer,
-                "items": items_data
+                "items": items_data,
             }
 
-            # Render the HTML template
-            html_string = render_to_string("invoice_template.html", context)
-            
+            # Define PDF path
+            pdf_folder = os.path.join(settings.MEDIA_ROOT, 'pdfs')
+            os.makedirs(pdf_folder, exist_ok=True)
+            pdf_path = os.path.join(pdf_folder, f"Invoice_{invoice.id}.pdf")
+
+            # Check if PDF already exists
+            if not os.path.exists(pdf_path):
+                # Render the HTML template
+                html_string = render_to_string("invoice_template.html", context)
+
+                # Generate PDF
+                generate_pdf(html_string, pdf_path)
+
+            # Send email with the PDF
+            send_email_with_pdf(invoice.customer.email, pdf_path, invoice.id)
+
+            return Response({"message": "Invoice sent successfully"}, status=status.HTTP_200_OK)
+
         except Invoice.DoesNotExist:
             return Response({"detail": "Invoice not found."}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             print(traceback.format_exc())
             return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
+def generate_pdf(html_string, pdf_path):
+    from selenium import webdriver
+    from selenium.webdriver.chrome.options import Options
+    import base64
+
+    chrome_options = Options()
+    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+
+    driver = webdriver.Chrome(options=chrome_options)
+
+    # Save the HTML to a temporary file
+    temp_html_path = pdf_path.replace(".pdf", ".html")
+    with open(temp_html_path, 'w', encoding='utf-8') as f:
+        f.write(html_string)
+
+    # Navigate to the local file
+    driver.get(f"file://{temp_html_path}")
+    driver.implicitly_wait(10)
+
+    # Generate PDF
+    print_options = {
+        'landscape': False,
+        'paperWidth': 8.27,  # A4 width in inches
+        'paperHeight': 11.69,  # A4 height in inches
+        'marginTop': 0.39,
+        'marginBottom': 0.39,
+        'marginLeft': 0.39,
+        'marginRight': 0.39,
+    }
+    pdf_data = driver.execute_cdp_cmd('Page.printToPDF', print_options)
+
+    with open(pdf_path, 'wb') as f:
+        f.write(base64.b64decode(pdf_data['data']))
+
+    driver.quit()
+
+
+def send_email_with_pdf(email, pdf_path, invoice_id):
+    from django.core.mail import EmailMessage
+    with open(pdf_path, 'rb') as pdf_file:
+        email = EmailMessage(
+            subject=f"Invoice #{invoice_id}",
+            body="Please find attached your invoice.",
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[email],
+        )
+        email.attach(f"Invoice_{invoice_id}.pdf", pdf_file.read(), "application/pdf")
+        email.send()
+
+
+class DownloadInvoiceView(APIView):
+    def get(self, request, invoice_id):
         try:
-            chrome_options = Options()
-            chrome_options.add_argument("--headless")
-            chrome_options.add_argument("--disable-gpu")
-            chrome_options.add_argument("--no-sandbox")
-            chrome_options.add_argument("--disable-dev-shm-usage")
+            # Fetch the invoice and related items
+            invoice = Invoice.objects.get(id=invoice_id)
+            items = InvoiceItem.objects.filter(invoice=invoice)
 
-            # Initialize webdriver
-            driver = webdriver.Chrome(options=chrome_options)
+            # Prepare data for template rendering
+            items_data = [
+                {
+                    "product_image": item.product.images if item.product.images else None,
+                    "product": item.product.product_name,
+                    "sku": item.product.sku,
+                    "dim": f"{item.product.tile_length} x {item.product.tile_width}",
+                    "quantity": item.quantity,
+                    "unit_type": "box",
+                    "unit_price": item.unit_price,
+                    "total_price": item.unit_price * item.quantity,
+                }
+                for item in items
+            ]
+            context = {
+                "invoice": invoice,
+                "customer": invoice.customer,
+                "items": items_data,
+            }
 
-            # Use a local HTML file instead of trying to reverse a URL
-            # Save the HTML to a temporary file
+            # Define PDF path
             pdf_folder = os.path.join(settings.MEDIA_ROOT, 'pdfs')
             os.makedirs(pdf_folder, exist_ok=True)
-            
-            temp_html_path = os.path.join(pdf_folder, f"Invoice_{invoice.id}.html")
-            with open(temp_html_path, 'w', encoding='utf-8') as f:
-                f.write(html_string)
+            pdf_path = os.path.join(pdf_folder, f"Invoice_{invoice_id}.pdf")
 
-            # Navigate to the local file
-            driver.get(f"file://{temp_html_path}")
+            # Check if PDF exists, generate if not
+            if not os.path.exists(pdf_path):
+                # Render the HTML template
+                html_string = render_to_string("invoice_template.html", context)
 
-            # Wait for page to load (adjust as needed)
-            driver.implicitly_wait(10)
+                # Generate PDF
+                generate_pdf(html_string, pdf_path)
 
-            # Generate unique filename
-            unique_filename = f"Invoice_{invoice.id}.pdf"
-            pdf_path = os.path.join(pdf_folder, unique_filename)
+            # Return the PDF as a response
+            return FileResponse(open(pdf_path, 'rb'), as_attachment=True, filename=f"Invoice_{invoice_id}.pdf")
 
-            # Print page to PDF
-            print_options = {
-                'landscape': False,
-                'paperWidth': 8.27,  # A4 width in inches
-                'paperHeight': 11.69,  # A4 height in inches
-                'marginTop': 0.39,
-                'marginBottom': 0.39,
-                'marginLeft': 0.39,
-                'marginRight': 0.39,
-            }
-            pdf_data = driver.execute_cdp_cmd('Page.printToPDF', print_options)
-            
-            # Save PDF
-            with open(pdf_path, 'wb') as f:
-                f.write(base64.b64decode(pdf_data['data']))
-
-            # Close the driver
-            driver.quit()
-
+        except Invoice.DoesNotExist:
+            return Response({"detail": "Invoice not found."}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             print(traceback.format_exc())
             return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-        with open(pdf_path, 'rb') as pdf_file:
-            # Compose and send email
-            email = EmailMessage(
-                subject=f"Invoice #{invoice.id}",
-                body="Please find attached your invoice.",
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                to=[invoice.customer.email],
-            )
-            email.attach(f"Invoice_{invoice.id}.pdf", pdf_file.read(), "application/pdf")
-            
-            try:
-                email.send()
-                return Response({"message": "Invoice sent successfully"}, status=status.HTTP_200_OK)
-            except Exception as e:
-                # Log the error
-                print(f"Email sending failed: {e}")
-                return Response({"message": "Error in sending mail please check the customer email"}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class CreateEstimateView(APIView):
