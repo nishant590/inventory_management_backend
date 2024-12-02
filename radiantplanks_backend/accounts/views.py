@@ -7,6 +7,7 @@ from django.db.models import Sum, Q
 from django.http import JsonResponse
 from rest_framework.permissions import IsAuthenticated
 from decimal import Decimal
+import pandas as pd
 
 
 class AddAccountAPI(APIView):
@@ -96,9 +97,51 @@ class AccountListView(APIView):
 
 class AccountReceivablesView(APIView):
     def get(self, request):
-        receivables = ReceivableTracking.objects.all()
-        data = [{"customer": r.customer.name, "receivable_amount": r.receivable_amount} for r in receivables]
-        return Response({"data":data}, status=status.HTTP_200_OK)
+        try:
+            # Fetch data from the database directly as a queryset
+            receivables = ReceivableTracking.objects.values(
+                "customer__display_name", "receivable_amount"
+            )
+            
+            # Convert the queryset to a pandas DataFrame
+            df = pd.DataFrame.from_records(receivables, columns=["customer__display_name", "receivable_amount"])
+            
+            if df.empty:
+                # Handle empty table scenario
+                return Response(
+                    {
+                        "data": [],
+                        "overall_receivable": 0,
+                    },
+                    status=status.HTTP_200_OK,
+                )
+            
+            # Rename columns for a clean response
+            df.rename(columns={"customer__display_name": "customer"}, inplace=True)
+            
+            # Calculate overall receivable amount
+            overall_receivable = df["receivable_amount"].sum()
+            
+            # Convert DataFrame back to a dictionary
+            receivables_data = df.to_dict(orient="records")
+            
+            return Response(
+                {
+                    "data": receivables_data,
+                    "overall_receivable": overall_receivable,
+                },
+                status=status.HTTP_200_OK,
+            )
+        
+        except Exception as e:
+            # Handle unexpected errors
+            return Response(
+                {
+                    "detail": "An error occurred while processing the request.",
+                    "error": str(e),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
     
 
 class AccountPayablesView(APIView):

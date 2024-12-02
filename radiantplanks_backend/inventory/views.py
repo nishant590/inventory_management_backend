@@ -961,7 +961,7 @@ class CreateInvoiceView(APIView):
                     )
                     
                     # Accumulate total amount
-                    total_amount += line_total
+                    # total_amount += line_total
 
                 # Update the invoice's total amount after processing all items
                 # invoice.total_amount = total_amount
@@ -1230,7 +1230,7 @@ class SendInvoiceView(APIView):
                 generate_pdf(html_string, pdf_path)
 
             # Send email with the PDF
-            send_email_with_pdf(invoice.customer.email, pdf_path, invoice.id)
+            send_email_with_pdf(invoice.customer_email, pdf_path, invoice.id)
 
             return Response({"message": "Invoice sent successfully"}, status=status.HTTP_200_OK)
 
