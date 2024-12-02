@@ -62,7 +62,7 @@ class Vendor(models.Model):
 
 class VendorAddress(models.Model):
     vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE, related_name='vendor_addresses')
-    address_type = models.CharField(max_length=10, choices=[('Billing', 'Billing'), ('Shipping', 'Shipping'), 
+    address_type = models.CharField(max_length=30, choices=[('Billing', 'Billing'), ('Shipping', 'Shipping'), 
                                                             ('Billing and Shipping', 'Billing and Shipping')])
     street_add_1 = models.CharField(max_length=255)
     street_add_2 = models.CharField(max_length=255)
