@@ -151,7 +151,7 @@ class CustomerDetailView(APIView):
                 "email": customer.email,
                 "phone": customer.phone,
                 "mobile_number": customer.mobile_number,
-                "address": list(customer_add)
+                "addresses": list(customer_add)
             }
             return Response({"customer": customer_details}, status=status.HTTP_200_OK)
 
@@ -421,7 +421,7 @@ class VendorRetriveView(APIView):
                 "email": vendor.email,
                 "phone": vendor.phone,
                 "mobile_number": vendor.mobile_number,
-                "address": list(vendor_add)
+                "addresses": list(vendor_add)
             }
             return Response({"vendor": vendor_details}, status=status.HTTP_200_OK)
 
