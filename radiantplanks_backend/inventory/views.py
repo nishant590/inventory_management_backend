@@ -1153,7 +1153,7 @@ class InvoicePaidView(APIView):
                 if invoice.is_paid:
                     return Response("Invoice is already paid", status=status.HTTP_200_OK)
                 invoice.is_paid = True
-                customer = Customer.objects.get(id=invoice.customer.id)
+                customer = Customer.objects.get(customer_id=invoice.customer.customer_id)
                 payment_transaction = process_invoice_payment(customer=customer, payment_amount=invoice.total_amount, user=user)
                 invoice.save()
                 log.audit.success(f"Invoice marked as paid | {invoice.id} | {request.user}")
@@ -1755,7 +1755,7 @@ class BillPaidView(APIView):
                 bill = Bill.objects.get(id=id, is_active=True)
                 if bill.is_paid:
                     return Response("bill is already paid", status=status.HTTP_200_OK)
-                vendor = Vendor.objects.get(id=bill.vendor.id)
+                vendor = Vendor.objects.get(vendor_id=bill.vendor.vendor_id)
                 bill.is_paid = True
                 bill_transaction = process_bill_payment(vendor=vendor, payment_amount=bill.total_amount, user=user)
                 bill.save()
