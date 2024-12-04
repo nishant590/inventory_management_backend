@@ -516,7 +516,7 @@ class CategoryDeleteView(APIView):
         # Soft delete by setting `is_active` to False
         category.is_active = False
         category.save()
-        log.audit.log(f"Category {category.name} deleted successfully | {category.name} | {user}")
+        log.audit.success(f"Category {category.name} deleted successfully | {category.name} | {user}")
         return Response({"detail": "Category deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
 
 
@@ -1052,7 +1052,7 @@ class CreateInvoiceView(APIView):
                 invoice.save()
                 invoice_transactions = create_invoice_transaction(customer=customer, 
                                     products=transaction_products, total_amount=total_amount, user=request.user, is_paid=is_paid)
-            log.audit.sucess(f"Invoice created successfully | {invoice.id} | {request.user}")
+            log.audit.success(f"Invoice created successfully | {invoice.id} | {request.user}")
             return Response({"invoice_id": invoice.id, "message": "Invoice created successfully."}, status=status.HTTP_201_CREATED)
 
         except Exception as e:
