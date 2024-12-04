@@ -9,6 +9,9 @@ from django.utils import timezone
 from .models import Customer, Address, Vendor, VendorAddress
 from radiantplanks_backend.logging import log
 import traceback 
+import jwt
+from django.conf import settings
+from authentication.models import NewUser
 
 class CustomerCreateView(APIView):
     permission_classes = [IsAuthenticated]
@@ -112,6 +115,49 @@ class CustomerListView(APIView):
         ]
         return Response({"customers": customer_list}, status=status.HTTP_200_OK)
 
+
+class CustomerDetailView(APIView):
+    def get_user_from_token(self, request):
+        token = request.headers.get("Authorization", "").split(" ")[1]
+        try:
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+            user_id = payload.get("user_id")
+            return NewUser.objects.get(id=user_id)
+        except (jwt.ExpiredSignatureError, jwt.DecodeError, NewUser.DoesNotExist):
+            return None
+
+    def get(self, request, customer_id):
+        user = self.get_user_from_token(request)
+        if not user:
+            return Response({"detail": "Invalid or expired token."}, status=status.HTTP_401_UNAUTHORIZED)
+        try:
+            customer = Customer.objects.get(customer_id=customer_id)
+            customer_add = Address.objects.filter(customer_id=customer.customer_id).values(    
+                "address_type",
+                "street_add_1",
+                "street_add_2",
+                "city",
+                "state",
+                "postal_code",
+                "country"
+            )
+            customer_details = {
+                "customer_id": customer.customer_id,
+                "first_name": customer.first_name,
+                "middle_name": customer.middle_name,
+                "last_name": customer.last_name,
+                "display_name": customer.display_name,
+                "company": customer.company,
+                "email": customer.email,
+                "phone": customer.phone,
+                "mobile_number": customer.mobile_number,
+                "address": list(customer_add)
+            }
+            return Response({"customer": customer_details}, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            log.trace.trace(f"Error : {traceback.format_exc()}")
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class CustomerEditView(APIView):
     permission_classes = [IsAuthenticated]
@@ -338,3 +384,48 @@ class VendorDeleteView(APIView):
         except Vendor.DoesNotExist:
             log.trace.trace(f"Vendor deactivated failed | {traceback.format_exc()}") 
             return Response({"error": "vendor not found"}, status=status.HTTP_404_NOT_FOUND)
+        
+
+class VendorRetriveView(APIView):
+    def get_user_from_token(self, request):
+        token = request.headers.get("Authorization", "").split(" ")[1]
+        try:
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+            user_id = payload.get("user_id")
+            return NewUser.objects.get(id=user_id)
+        except (jwt.ExpiredSignatureError, jwt.DecodeError, NewUser.DoesNotExist):
+            return None
+
+    def get(self, request, vendor_id):
+        user = self.get_user_from_token(request)
+        if not user:
+            return Response({"detail": "Invalid or expired token."}, status=status.HTTP_401_UNAUTHORIZED)
+        try:
+            vendor = Vendor.objects.get(vendor_id=vendor_id)
+            vendor_add = VendorAddress.objects.filter(vendor_id=vendor.vendor_id).values(    
+                "address_type",
+                "street_add_1",
+                "street_add_2",
+                "city",
+                "state",
+                "postal_code",
+                "country"
+            )
+            vendor_details = {
+                "vendor_id": vendor.vendor_id,
+                "first_name": vendor.first_name,
+                "middle_name": vendor.middle_name,
+                "last_name": vendor.last_name,
+                "display_name": vendor.display_name,
+                "company": vendor.company,
+                "email": vendor.email,
+                "phone": vendor.phone,
+                "mobile_number": vendor.mobile_number,
+                "address": list(vendor_add)
+            }
+            return Response({"vendor": vendor_details}, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            log.trace.trace(f"Error : {traceback.format_exc()}")
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+

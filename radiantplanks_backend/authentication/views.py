@@ -173,18 +173,18 @@ class UserListView(APIView):
 class UserDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request, pk):
+    def get(self, request, id):
         try:
-            user = NewUser.objects.get(pk=pk)
+            user = NewUser.objects.get(id=id)
         except NewUser.DoesNotExist:
             raise exceptions.NotFound('User not found')
 
         serializer = UserSerializer(user)
         return Response(serializer.data)
 
-    def put(self, request, pk):
+    def put(self, request, id):
         try:
-            user = NewUser.objects.get(pk=pk)
+            user = NewUser.objects.get(id=id)
         except NewUser.DoesNotExist:
             raise exceptions.NotFound('User not found')
 
