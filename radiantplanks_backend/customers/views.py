@@ -337,6 +337,12 @@ class VendorEditView(APIView):
             vendor = Vendor.objects.get(pk=vendor_id)
         except Vendor.DoesNotExist:
             return Response({"error": "vendor not found"}, status=status.HTTP_404_NOT_FOUND)
+        
+        vendor_email = vendor.email
+        duplicate_email = Vendor.objects.filter(email=vendor_email).exclude(vendor_id=vendor_id).exists()
+        if duplicate_email:
+            log.app.trace("Email already exists for another vendor")
+            return Response({"error": "Email already exists for another vendor."}, status=status.HTTP_400_BAD_REQUEST)
 
         # Update fields if provided
         vendor.first_name = data.get("first_name", vendor.first_name)
@@ -353,7 +359,7 @@ class VendorEditView(APIView):
 
         # Update or add addresses
         if addresses_data:
-            Vendor.vendor_addresses.all().delete()  # Delete existing addresses
+            vendor.vendor_addresses.all().delete()  # Delete existing addresses
             for addr_data in addresses_data:
                 VendorAddress.objects.create(
                     vendor=vendor,
