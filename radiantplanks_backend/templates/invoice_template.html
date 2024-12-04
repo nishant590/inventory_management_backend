@@ -231,7 +231,7 @@
                 <p style="font-weight: 700;font-size: 14px;color: black;">Subtotal</p> <p style="font-weight: 500;font-size: 14px;color: black;">${{ invoice.sum_amount }}</p>
                </div>
                <div style="display: flex;justify-content: space-between;align-items: center;margin-top: -20px;">
-                <p style="font-weight: 700;font-size: 14px;color: black;">Sales Tax (7.25%)</p> <p style="font-weight: 500;font-size: 14px;color: black;">${{ invoice.tax_amount }}</p>
+                <p style="font-weight: 700;font-size: 14px;color: black;">Sales Tax ({{ invoice.tax_percentage }}%)</p> <p style="font-weight: 500;font-size: 14px;color: black;">${{ invoice.tax_amount }}</p>
                </div>
                <div style="display: flex;justify-content: space-between;align-items: center;margin-top: -20px;">
                 <p style="font-weight: 700;font-size: 14px;color: black;">Shipping</p> <p style="font-weight: 500;font-size: 14px;color: black;">$0.00</p>
