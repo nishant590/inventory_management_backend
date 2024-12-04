@@ -228,16 +228,16 @@
 
             <div style="width: 50%;">
                <div style="display: flex;justify-content: space-between;align-items: center;">
-                <p style="font-weight: 700;font-size: 14px;color: black;">Subtotal</p> <p style="font-weight: 500;font-size: 14px;color: black;">$1550</p>
+                <p style="font-weight: 700;font-size: 14px;color: black;">Subtotal</p> <p style="font-weight: 500;font-size: 14px;color: black;">${{ invoice.sum_amount }}</p>
                </div>
                <div style="display: flex;justify-content: space-between;align-items: center;margin-top: -20px;">
-                <p style="font-weight: 700;font-size: 14px;color: black;">Sales Tax (7.25%)</p> <p style="font-weight: 500;font-size: 14px;color: black;">$116.50</p>
+                <p style="font-weight: 700;font-size: 14px;color: black;">Sales Tax (7.25%)</p> <p style="font-weight: 500;font-size: 14px;color: black;">${{ invoice.tax_amount }}</p>
                </div>
                <div style="display: flex;justify-content: space-between;align-items: center;margin-top: -20px;">
-                <p style="font-weight: 700;font-size: 14px;color: black;">Shipping</p> <p style="font-weight: 500;font-size: 14px;color: black;">$100</p>
+                <p style="font-weight: 700;font-size: 14px;color: black;">Shipping</p> <p style="font-weight: 500;font-size: 14px;color: black;">$0.00</p>
                </div>
                <div style="display: flex;justify-content: space-between;align-items: center;margin-top: -20px;">
-                <p style="font-weight: 700;font-size: 14px;color: black;">Remaining</p> <p style="font-weight: 500;font-size: 14px;color: black;">$400</p>
+                <p style="font-weight: 700;font-size: 14px;color: black;">Remaining</p> <p style="font-weight: 500;font-size: 14px;color: black;">${{ invoice.total_amount }}</p>
                </div>
 
                <div style="display: flex;justify-content: space-between;align-items: center;margin-top: -5px;background-color: #F29622;padding-left: 5px;padding-right: 5px;">
