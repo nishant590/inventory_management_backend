@@ -1,26 +1,57 @@
-from loguru import logger
 import os
+import sys
+from loguru import logger
+from django.conf import settings
 
-# Define the log file directory and ensure it exists
-log_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'logs')
-os.makedirs(log_dir, exist_ok=True)
+# Ensure logs directory exists
+logs_dir = os.path.join(settings.BASE_DIR, 'logs')
+os.makedirs(logs_dir, exist_ok=True)
 
-# Loguru configuration
-logger.remove()  # Remove the default handler
+# Remove default handlers
+logger.remove()
+
+# Console logging
 logger.add(
-    os.path.join(log_dir, "app.log"),
-    format="{time} - {name} - {level} - {message}",
-    rotation="10 MB",  # Rotation after log file reaches 10MB
-    compression="zip",
-    retention="30 days",  # Keep logs for 30 days
+    sys.stdout, 
+    format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan> - <level>{message}</level>",
+    level="INFO"
 )
 
-# For trace-level logs (for errors)
-logger.add(
-    os.path.join(log_dir, "error_trace.log"),
-    format="{time} - {name} - {level} - {message}",
-    level="TRACE",  # Only log trace level or above
+# Audit Log
+audit_logger = logger.bind(name="AUDIT")
+audit_logger.add(
+    os.path.join(logs_dir, 'audit_{time:YYYY-MM-DD}.log'),
     rotation="10 MB",
-    compression="zip",
     retention="30 days",
+    level="SUCCESS",
+    filter=lambda record: record["level"].name == "SUCCESS"
 )
+
+# Application Log
+app_logger = logger.bind(name="APP")
+app_logger.add(
+    os.path.join(logs_dir, 'app_{time:YYYY-MM-DD}.log'),
+    rotation="50 MB",
+    retention="15 days",
+    level="INFO",
+    filter=lambda record: record["level"].name != "SUCCESS"
+)
+
+# Trace Log
+trace_logger = logger.bind(name="TRACE")
+trace_logger.add(
+    os.path.join(logs_dir, 'trace_{time:YYYY-MM-DD}.log'),
+    rotation="5 MB",
+    retention="7 days",
+    level="DEBUG",
+    filter=lambda record: record["level"].name == "DEBUG"
+)
+
+# Export loggers for easy import
+class Loggers:
+    audit = audit_logger
+    app = app_logger
+    trace = trace_logger
+
+# Global logger instance
+log = Loggers()

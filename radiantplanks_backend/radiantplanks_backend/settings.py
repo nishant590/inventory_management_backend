@@ -12,8 +12,11 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 
 from pathlib import Path
 import sys
-from pathlib import Path
+import os
+import dotenv
+from loguru import logger
 
+dotenv.load_dotenv()
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -22,7 +25,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-k0&f$2cj+%=m3%lt-prd81clocc$_rcsqu0+2ui@ust4bm!qv+'
+SECRET_KEY = os.environ.get('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -72,7 +75,6 @@ REST_FRAMEWORK = {
 
 ROOT_URLCONF = 'radiantplanks_backend.urls'
 
-import os
 BASE_DIR_2 = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 TEMPLATES = [
@@ -99,58 +101,65 @@ WSGI_APPLICATION = 'radiantplanks_backend.wsgi.application'
 LOG_DIR = os.path.join(BASE_DIR, 'logs')
 os.makedirs(LOG_DIR, exist_ok=True)
 
+
 # Logging configuration
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': True,
-    'formatters': {
-        'verbose': {
-            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
-            'style': '{',
-        },
-        'simple': {
-            'format': '{levelname} {message}',
-            'style': '{',
-        },
-    },
-    'handlers': {
-        'custom_file': {
-            'level': 'DEBUG',
-            'class': 'logging.FileHandler',
-            'filename': os.path.join(BASE_DIR, 'logs', 'custom_app.log'),
-            'formatter': 'verbose',
-        },
-        'console': {
-            'level': 'INFO',
-            'class': 'logging.StreamHandler',
-            'formatter': 'simple',
-        },
-    },
-    'loggers': {
-        'custom_logger': {
-            'handlers': ['custom_file', 'console'],
-            'level': 'INFO',
-            'propagate': False,
-        },
-        'trace_logger': {
-            'handlers': ['custom_file', 'console'],
-            'level': 'DEBUG',
-            'propagate': False,
-        },
-        'django': {
-            'handlers': [],
-            'level': 'CRITICAL',
-        },
-        'django.request': {
-            'handlers': [],
-            'level': 'CRITICAL',
-        },
-        'django.server': {
-            'handlers': [],
-            'level': 'CRITICAL',
-        },
-    },
-}
+# LOGGING = {
+#     'version': 1,
+#     'disable_existing_loggers': True,
+#     'formatters': {
+#         'verbose': {
+#             'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+#             'style': '{',
+#         },
+#         'simple': {
+#             'format': '{levelname} {message}',
+#             'style': '{',
+#         },
+#     },
+#     'handlers': {
+#         'custom_file': {
+#             'level': 'DEBUG',
+#             'class': 'logging.FileHandler',
+#             'filename': os.path.join(BASE_DIR, 'logs', 'app_logs.log'),
+#             'formatter': 'verbose',
+#         },
+#         'trace_logger': {
+#             'level': 'DEBUG',
+#             'class': 'logging.FileHandler',
+#             'filename': os.path.join(BASE_DIR, 'logs', 'trace_logs.log'),
+#             'formatter': 'verbose',
+#         },
+#         'console': {
+#             'level': 'INFO',
+#             'class': 'logging.StreamHandler',
+#             'formatter': 'simple',
+#         },
+#     },
+#     'loggers': {
+#         'custom_logger': {
+#             'handlers': ['custom_file', 'console'],
+#             'level': 'INFO',
+#             'propagate': False,
+#         },
+#         'trace_logger': {
+#             'handlers': ['custom_file', 'console'],
+#             'level': 'DEBUG',
+#             'propagate': False,
+#         },
+#         'django': {
+#             'handlers': [],
+#             'level': 'CRITICAL',
+#         },
+#         'django.request': {
+#             'handlers': [],
+#             'level': 'CRITICAL',
+#         },
+#         'django.server': {
+#             'handlers': [],
+#             'level': 'CRITICAL',
+#         },
+#     },
+# }
 
 DATABASES = {
     'default': {
@@ -218,11 +227,11 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'smtp.gmail.com'
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True
-EMAIL_HOST_USER = 'surajmendhe470@gmail.com'
-EMAIL_HOST_PASSWORD = 'gdtc kaku vtqq pkro'
-DEFAULT_FROM_EMAIL = 'surajmendhe470@gmail.com'
+EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND")
+EMAIL_HOST = os.environ.get("EMAIL_HOST")
+EMAIL_PORT = os.environ.get("EMAIL_PORT")
+EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS")
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD")
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL")
 

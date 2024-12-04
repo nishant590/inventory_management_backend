@@ -7,7 +7,8 @@ from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.utils import timezone
 from .models import Customer, Address, Vendor, VendorAddress
-
+from radiantplanks_backend.logging import log
+import traceback 
 
 class CustomerCreateView(APIView):
     permission_classes = [IsAuthenticated]
@@ -77,10 +78,12 @@ class CustomerCreateView(APIView):
                         postal_code=addr_data.get('postal_code', ''),
                         country=addr_data.get('country', 'Unknown')
                     )
+            log.audit.success(f"Customer created successfully | {customer.display_name} | {request.user} ")
 
             return Response({'message': 'Customer created successfully'}, status=status.HTTP_201_CREATED)
 
         except Exception as e:
+            log.trace.trace(f"Error : {traceback.format_exc()}")
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -150,7 +153,8 @@ class CustomerEditView(APIView):
                     postal_code=addr_data.get('postal_code', ''),
                     country=addr_data.get('country', 'Unknown')
                 )
-
+        
+        log.audit.success(f"Customer updated successfully | {customer.display_name} | {request.user} ")
         return Response({"message": "Customer updated successfully"}, status=status.HTTP_200_OK)
     
 
@@ -164,6 +168,7 @@ class CustomerDeleteView(APIView):
             customer.updated_by = request.user  # Optionally track who deactivated
             customer.updated_date = timezone.now()
             customer.save()
+            log.audit.success(f"Customer deactivated successfully | {customer.display_name} | {request.user}")
             return Response({"message": "Customer deactivated successfully"}, status=status.HTTP_200_OK)
         except Customer.DoesNotExist:
             return Response({"error": "Customer not found"}, status=status.HTTP_404_NOT_FOUND)
@@ -204,6 +209,8 @@ class VendorCreateView(APIView):
                     errors[f'addresses[{i}][street]'] = "Street is required."
 
         if errors:
+            log.app.trace("Validation error: {}".format(errors))
+            log.trace.trace(f"Validation errors : {errors}")
             return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
 
         # If all validations pass, create the customer and addresses
@@ -236,10 +243,12 @@ class VendorCreateView(APIView):
                         postal_code=addr_data.get('postal_code', ''),
                         country=addr_data.get('country', 'Unknown')
                     )
-
+            log.audit.success(f"Vendor created successfully | {vendor.display_name} | {request.user} ")
             return Response({'message': 'Vendor created successfully'}, status=status.HTTP_201_CREATED)
 
         except Exception as e:
+            log.app.error(f"Error in vendor creation {str(e)}")
+            log.trace.trace(f"Error in vendor creation {traceback.format_exc()}")
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -307,7 +316,7 @@ class VendorEditView(APIView):
                     postal_code=addr_data.get('postal_code', ''),
                     country=addr_data.get('country', 'Unknown')
                 )
-
+        log.audit.success(f"Vendor updated successfully | {vendor.display_name} | {request.user} ")
         return Response({"message": "Vendor updated successfully"}, status=status.HTTP_200_OK)
     
 
@@ -321,6 +330,8 @@ class VendorDeleteView(APIView):
             vendor.updated_by = request.user  # Optionally track who deactivated
             vendor.updated_date = timezone.now()
             vendor.save()
+            log.audit.success(f"Vendor deactivated successfully | {vendor.display_name} | {request.user}")
             return Response({"message": "vendor deactivated successfully"}, status=status.HTTP_200_OK)
         except Vendor.DoesNotExist:
+            log.trace.trace(f"Vendor deactivated failed | {traceback.format_exc()}") 
             return Response({"error": "vendor not found"}, status=status.HTTP_404_NOT_FOUND)

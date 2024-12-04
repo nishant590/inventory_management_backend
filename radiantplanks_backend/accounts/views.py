@@ -1,13 +1,15 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from .models import Account, ReceivableTracking, Transaction, TransactionLine
+from .models import Account, ReceivableTracking, Transaction, TransactionLine, PayableTracking
 from django.core.exceptions import ValidationError
 from django.db.models import Sum, Q
 from django.http import JsonResponse
 from rest_framework.permissions import IsAuthenticated
 from decimal import Decimal
 import pandas as pd
+from radiantplanks_backend.logging import log
+import traceback
 
 
 class AddAccountAPI(APIView):
@@ -22,6 +24,7 @@ class AddAccountAPI(APIView):
 
             # Validate the required fields
             if not name or not account_type or not code:
+                log.app.error("Invalid name or account type or code provided")
                 return Response(
                     {"message": "Missing required fields: name, account_type, and code."},
                     status=status.HTTP_400_BAD_REQUEST
@@ -30,6 +33,7 @@ class AddAccountAPI(APIView):
             # Validate account type
             valid_account_types = ['asset', 'liability', 'equity', 'income', 'expense']
             if account_type not in valid_account_types:
+                log.app.error("Invalid account type provided")
                 return Response(
                     {"message": f"Invalid account type. Valid types are {valid_account_types}."},
                     status=status.HTTP_400_BAD_REQUEST
@@ -37,6 +41,7 @@ class AddAccountAPI(APIView):
 
             # Ensure the account code is unique
             if Account.objects.filter(code=code).exists():
+                log.app.error("Account code already exists")
                 return Response(
                     {"message": "Account with this code already exists."},
                     status=status.HTTP_400_BAD_REQUEST
@@ -52,6 +57,7 @@ class AddAccountAPI(APIView):
             )
 
             # Return success response
+            log.audit.success(f"Account created successfully | {account.name} | {request.user}")
             return Response(
                 {"message": "Account created successfully!", "data": {
                     "name": account.name,
@@ -64,14 +70,16 @@ class AddAccountAPI(APIView):
             )
 
         except ValidationError as e:
+            log.trace.trace(f"Validation error: {str(e)}, {traceback.format_exc()}")
             return Response(
                 {"message": f"Validation error: {str(e)}"},
                 status=status.HTTP_400_BAD_REQUEST
             )
         except Exception as e:
+            log.trace.trace(f"Error while creating account {traceback.format_exc()}")
             return Response(
                 {"message": f"Error: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                status=status.HTTP_400_BAD_REQUEST
             )
 
 
@@ -100,7 +108,7 @@ class AccountReceivablesView(APIView):
         try:
             # Fetch data from the database directly as a queryset
             receivables = ReceivableTracking.objects.values(
-                "customer__display_name", "receivable_amount"
+                "customer__display_name", "payable_amount"
             )
             
             # Convert the queryset to a pandas DataFrame
@@ -134,6 +142,7 @@ class AccountReceivablesView(APIView):
             )
         
         except Exception as e:
+            log.trace.trace(f"Error while fetching receivables data, {traceback.format_exc()}")
             # Handle unexpected errors
             return Response(
                 {
@@ -146,9 +155,52 @@ class AccountReceivablesView(APIView):
 
 class AccountPayablesView(APIView):
     def get(self, request):
-        account_payables = Account.objects.filter(account_type='accounts_payable')
-        data = [{"name": acc.name, "balance": acc.balance} for acc in account_payables]
-        return Response({"data":data}, status=status.HTTP_200_OK)
+        try:
+            # Fetch data from the database directly as a queryset
+            payables = PayableTracking.objects.values(
+                "vendor__display_name", "payable_amount"
+            )
+            
+            # Convert the queryset to a pandas DataFrame
+            df = pd.DataFrame.from_records(payables, columns=["vendor__display_name", "payable_amount"])
+            
+            if df.empty:
+                # Handle empty table scenario
+                return Response(
+                    {
+                        "data": [],
+                        "overall_payables": 0,
+                    },
+                    status=status.HTTP_200_OK,
+                )
+            
+            # Rename columns for a clean response
+            df.rename(columns={"vendor__display_name": "vendor"}, inplace=True)
+            
+            # Calculate overall receivable amount
+            overall_receivable = df["payable_amount"].sum()
+            
+            # Convert DataFrame back to a dictionary
+            payables_data = df.to_dict(orient="records")
+            
+            return Response(
+                {
+                    "data": payables_data,
+                    "overall_payable": overall_receivable,
+                },
+                status=status.HTTP_200_OK,
+            )
+        
+        except Exception as e:
+            log.trace.trace(f"Error while fetching payables data, {traceback.format_exc()}")
+            # Handle unexpected errors
+            return Response(
+                {
+                    "detail": "An error occurred while processing the request.",
+                    "error": str(e),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
 
 class BalanceSheetView(APIView):

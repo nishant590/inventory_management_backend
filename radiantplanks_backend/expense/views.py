@@ -33,6 +33,7 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 import base64
 from django.db.models import Max
+from radiantplanks_backend.logging import log
 import logging
 
 # Get the default logger
@@ -158,9 +159,10 @@ class CreateExpenseView(APIView):
                     account.save()
 
                 expense.save()
+            log.audit.success(f"Expense created successfully | {expense.id} | {user}")
             return Response({"invoice_id": expense.expense_number, "message": "Expense created successfully."}, status=status.HTTP_201_CREATED)
         except Exception as e:
-            logger.exception("Error occured", exc_info=True)
+            log.trace.trace(f"error while creating expense, {traceback.format_exc()}")
             return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 

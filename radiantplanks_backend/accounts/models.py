@@ -141,4 +141,4 @@ class PayableTracking(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"{self.vendor.display_name} - {self.receivable_amount}"
+        return f"{self.vendor.display_name} - {self.payable_amount}"

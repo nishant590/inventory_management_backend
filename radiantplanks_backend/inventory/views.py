@@ -37,10 +37,11 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 import base64
 from django.db.models import Max
-import logging
-
+# import logging
+from loguru import logger
+from radiantplanks_backend.logging import log
 # Get the default logger
-logger = logging.getLogger('custom_logger')
+# logger = logging.getLogger('custom_logger')
 # Category Views
 
 # config_path = pdfkit.configuration(wkhtmltopdf='C:/Program Files/wkhtmltopdf/bin/wkhtmltopdf.exe')
@@ -85,41 +86,44 @@ def add_inventory_transaction(product_name, quantity, unit_cost, inventory_accou
                 transaction=transaction,
                 account=inventory_account,
                 description=f"Inventory addition for {product_name}",
-                debit_amount=0,
-                credit_amount=total_cost,
+                debit_amount=total_cost,
+                credit_amount=0,
             )
 
             # Credit: Assume it's an owner's equity or cash account (to offset the inventory addition)
             owner_equity_account = Account.objects.filter(account_type='owner_equity').first()
             if not owner_equity_account:
+                log.app.error("No owner account for equity found")
                 raise ValueError("Owner equity account does not exist.")
             
             TransactionLine.objects.create(
                 transaction=transaction,
                 account=owner_equity_account,
                 description=f"Fund allocation for inventory addition of {product_name}",
-                debit_amount=total_cost,
-                credit_amount=0,
+                debit_amount=0,
+                credit_amount=total_cost,
             )
 
             # Update inventory account balance
-            inventory_account.balance += total_cost
-            owner_equity_account.balance -= total_cost
+            inventory_account.balance += Decimal(total_cost)
+            owner_equity_account.balance -= Decimal(total_cost)
             inventory_account.save()
             owner_equity_account.save()
-            logger.info("Inventory Transaction Success")
+            log.app.info("Inventory Transaction Success")
             return True
     except Exception as e:
-        logger.exception("Error occures",exc_info=True)
+        log.trace.trace(f"Error occures {traceback.format_exc()}")
         return False
     
-def create_invoice_transaction(customer, products, total_amount, user):
+
+def create_invoice_transaction(customer, products, total_amount, user, is_paid):
     """
     Adjust inventory and create account receivable for the invoice.
     """
     try:
-        inventory_account = Account.objects.get(code='INV-001')  # Inventory account
-        receivable_account = Account.objects.get(code='AR-001')  # Accounts Receivable account
+        inventory_account = Account.objects.get(account_type='inventory')  # Inventory account
+        receivable_account = Account.objects.get(account_type='accounts_receivable')  # Accounts Receivable account
+        bank_account = Account.objects.get(account_type='bank')  # Accounts Receivable account
         
         # Create a new transaction
         transaction = Transaction.objects.create(
@@ -147,66 +151,135 @@ def create_invoice_transaction(customer, products, total_amount, user):
             )
 
         # Add receivable (debit receivables account)
+        if is_paid:
+            TransactionLine.objects.create(
+                transaction=transaction,
+                account=bank_account,
+                description=f"Payment received from {customer.display_name}",
+                debit_amount=0,
+                credit_amount=total_amount
+            )
+
+            bank_account.balance += Decimal(total_amount)
+        else:
+            TransactionLine.objects.create(
+                transaction=transaction,
+                account=receivable_account,
+                description=f"Account receivable for invoice to {customer.display_name}",
+                debit_amount=0,
+                credit_amount=total_amount,
+            )
+
+        # Update receivable tracking
+            receivable, created = ReceivableTracking.objects.get_or_create(customer=customer)
+            receivable.receivable_amount += Decimal(total_amount)
+            receivable_account.balance += Decimal(total_amount)
+            receivable.save()
+        inventory_account.balance -= Decimal(inv_total_cost)
+        inventory_account.save()
+        receivable_account.save()
+        bank_account.save()
+        log.app.info("Invoice Transaction completed") 
+        return True
+    except Exception as e:
+        log.trace.trace(f"Error occured: {traceback.format_exc()}")
+        return False   
+
+
+def process_invoice_payment(customer, payment_amount, user):
+    """
+    Process payment for a customer and update accounts.
+    """
+    try:
+        receivable_account = Account.objects.get(account_type='accounts_receivable')  # Accounts Receivable account
+        bank_account = Account.objects.get(account_type='bank')  # Bank account
+        
+        # Create a new transaction
+        transaction = Transaction.objects.create(
+            reference_number=f"PAY-{uuid.uuid4().hex[:6].upper()}",
+            transaction_type='income',
+            date=datetime.now(),
+            description=f"Payment received from {customer.display_name}",
+            created_by=user  # Assuming you have request context
+        )
+
+        # Debit bank account (increase bank balance)
+        TransactionLine.objects.create(
+            transaction=transaction,
+            account=bank_account,
+            description=f"Payment received from {customer.display_name}",
+            debit_amount=0,
+            credit_amount=payment_amount,
+        )
+
+        # Credit receivables account (decrease receivables)
         TransactionLine.objects.create(
             transaction=transaction,
             account=receivable_account,
-            description=f"Account receivable for invoice to {customer.display_name}",
-            debit_amount=total_amount,
+            description=f"Clear receivable for {customer.display_name}",
+            debit_amount=payment_amount,
             credit_amount=0,
         )
 
         # Update receivable tracking
-        receivable, created = ReceivableTracking.objects.get_or_create(customer=customer)
-        receivable.receivable_amount += Decimal(total_amount)
-        inventory_account.balance -= Decimal(inv_total_cost)
-        receivable_account.balance += Decimal(total_amount)
+        receivable = ReceivableTracking.objects.get(customer=customer)
+        receivable.receivable_amount -= Decimal(payment_amount)
+        receivable_account.balance -= Decimal(payment_amount)
         receivable.save()
-        inventory_account.save()
         receivable_account.save()
-        logger.info("Invoice Transaction completed") 
+        log.app.info(f"Invoice paid by {customer.display_name}")
         return True
     except Exception as e:
-        logger.exception("Error occured:", exc_info=True)
-        return False   
+        log.trace.trace(f"Error occured: {traceback.format_exc()}")
+        return False
 
-def process_payment(customer, payment_amount, user):
+
+def process_bill_payment(vendor, payment_amount, user):
     """
     Process payment for a customer and update accounts.
     """
-    receivable_account = Account.objects.get(code='AR-001')  # Accounts Receivable account
-    bank_account = Account.objects.get(code='BANK-001')  # Bank account
-    
-    # Create a new transaction
-    transaction = Transaction.objects.create(
-        reference_number=f"PAY-{uuid.uuid4().hex[:6].upper()}",
-        transaction_type='income',
-        date=datetime.now(),
-        description=f"Payment received from {customer.display_name}",
-        created_by=user  # Assuming you have request context
-    )
+    try:
+        payable_account = Account.objects.get(account_type='accounts_payable')  # Accounts Receivable account
+        bank_account = Account.objects.get(account_type='bank')  # Bank account
+        
+        # Create a new transaction
+        transaction = Transaction.objects.create(
+            reference_number=f"PAY-{uuid.uuid4().hex[:6].upper()}",
+            transaction_type='expense',
+            date=datetime.now(),
+            description=f"Payment for {vendor.display_name}",
+            created_by=user  # Assuming you have request context
+        )
 
-    # Debit bank account (increase bank balance)
-    TransactionLine.objects.create(
-        transaction=transaction,
-        account=bank_account,
-        description=f"Payment received from {customer.display_name}",
-        debit_amount=payment_amount,
-        credit_amount=0,
-    )
+        # Debit bank account (increase bank balance)
+        TransactionLine.objects.create(
+            transaction=transaction,
+            account=bank_account,
+            description=f"Payment for {vendor.display_name}",
+            debit_amount=payment_amount,
+            credit_amount=0,
+        )
 
-    # Credit receivables account (decrease receivables)
-    TransactionLine.objects.create(
-        transaction=transaction,
-        account=receivable_account,
-        description=f"Clear receivable for {customer.display_name}",
-        debit_amount=0,
-        credit_amount=payment_amount,
-    )
+        # Credit receivables account (decrease receivables)
+        TransactionLine.objects.create(
+            transaction=transaction,
+            account=payable_account,
+            description=f"Clear payable for {vendor.display_name}",
+            debit_amount=payment_amount,
+            credit_amount=0,
+        )
 
-    # Update receivable tracking
-    receivable = ReceivableTracking.objects.get(customer=customer)
-    receivable.receivable_amount -= payment_amount
-    receivable.save()
+        # Update receivable tracking
+        payable = PayableTracking.objects.get(vendor=vendor)
+        payable.payable_amount -= payment_amount
+        payable_account.balance -= Decimal(payment_amount)
+        payable.save()
+        payable_account.save()
+        log.app.info("Bill payment done")
+        return True
+    except Exception as e:
+        log.trace.trace(f"Error occured: {traceback.format_exc()}")
+        return False
 
 
 def create_bill_transaction(vendor, products, total_amount, user, is_paid):
@@ -215,16 +288,16 @@ def create_bill_transaction(vendor, products, total_amount, user, is_paid):
     If paid, do not increase accounts payable and reduce bank balance.
     """
     try:
-        inventory_account = Account.objects.get(code='INV-001')  # Inventory account
-        payable_account = Account.objects.get(code='AP-001')  # Accounts Payable account
-        bank_account = Account.objects.get(code='BANK-001')  # Main Bank Account
+        inventory_account = Account.objects.get(account_type='inventory')  # Inventory account
+        payable_account = Account.objects.get(account_type='accounts_payable')  # Accounts Payable account
+        bank_account = Account.objects.get(account_type='bank')  # Main Bank Account
 
         # Create a new transaction
         transaction = Transaction.objects.create(
             reference_number=f"BILL-{uuid.uuid4().hex[:6].upper()}",
             transaction_type='expense',
             date=datetime.now(),
-            description=f"Bill for vendor {vendor.name}",
+            description=f"Bill for vendor {vendor.display_name}",
             created_by=user
         )
 
@@ -252,7 +325,7 @@ def create_bill_transaction(vendor, products, total_amount, user, is_paid):
             TransactionLine.objects.create(
                 transaction=transaction,
                 account=payable_account,
-                description=f"Accounts payable for bill to {vendor.name}",
+                description=f"Accounts payable for bill to {vendor.display_name}",
                 debit_amount=0,
                 credit_amount=total_amount,
             )
@@ -266,7 +339,7 @@ def create_bill_transaction(vendor, products, total_amount, user, is_paid):
             TransactionLine.objects.create(
                 transaction=transaction,
                 account=bank_account,
-                description=f"Payment for bill to {vendor.name}",
+                description=f"Payment for bill to {vendor.display_name}",
                 debit_amount=0,
                 credit_amount=total_amount,
             )
@@ -283,10 +356,10 @@ def create_bill_transaction(vendor, products, total_amount, user, is_paid):
         payable_account.save()
         bank_account.save()
 
-        logger.info("Bill Transaction completed")
+        log.app.info("Bill Transaction completed")
         return True
     except Exception as e:
-        logger.exception("Error occurred while creating bill transaction:", exc_info=True)
+        log.trace.trace(f"Error occurred while creating bill transaction: {traceback.format_exc()}")
         return False
 
 
@@ -308,6 +381,7 @@ class CategoryListCreateView(APIView):
     def post(self, request):
         user = self.get_user_from_token(request)
         if not user:
+            log.app.error("Invalid or expired token.")
             return Response({"detail": "Invalid or expired token."}, status=status.HTTP_401_UNAUTHORIZED)
         # Check if the user already has a category
 
@@ -315,16 +389,19 @@ class CategoryListCreateView(APIView):
         # Extract and validate data from request
         category_name = request.data.get("name")
         if not category_name:
+            log.app.error("Invalid category name")
             return Response({"detail": "Category name is required."}, status=status.HTTP_400_BAD_REQUEST)
 
         if_exists = Category.objects.filter(name=category_name).all()
         if if_exists:
+            log.app.error("Category already present.")
             return Response({"detail": "Category already present."}, status=status.HTTP_400_BAD_REQUEST)
 
 
         # Create the Category instance
         category = Category.objects.create(name=category_name, created_by=user)
-
+        log.audit.success(f"Category created successfully | {category.name} | {category.created_by}")
+        log.app.info(f"Category created successfully | {category.name} | {category.created_by}")
         # Return the created category data
         return Response({
             "id": category.id,
@@ -399,7 +476,8 @@ class CategoryUpdateView(APIView):
 
         category.updated_by = user
         category.save()
-
+        log.audit.success(f"Category updated successfully | {category.name} | {category.created_by}")
+        
         return Response({
             "id": category.id,
             "name": category.name,
@@ -436,7 +514,7 @@ class CategoryDeleteView(APIView):
         # Soft delete by setting `is_active` to False
         category.is_active = False
         category.save()
-
+        log.audit.log(f"Category {category.name} deleted successfully | {category.name} | {user}")
         return Response({"detail": "Category deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
 
 
@@ -533,6 +611,7 @@ class ProductCreateView(APIView):
 
 
         if not product_name or not selling_price or not product_type:
+            log.app.error(f"Product type, name, and selling_price are required.")
             return Response({"detail": "Product type, name, and selling_price are required."}, status=status.HTTP_400_BAD_REQUEST)
 
         if product_image:
@@ -559,6 +638,7 @@ class ProductCreateView(APIView):
             try:
                 category_id = Category.objects.get(id=category_id)
             except Category.DoesNotExist:
+                log.app.error(f"Category with id {category_id} does not exist.")
                 return Response({"detail": "Category not found."}, status=status.HTTP_404_NOT_FOUND)
 
         # Calculate stock quantity for products
@@ -619,6 +699,7 @@ class ProductCreateView(APIView):
                                                       inventory_account = inventory_account, 
                                                       created_by = user)
 
+        log.audit.success(f"Product added to inventory successfully | {product_name} | {user}")
         return Response({
             "id": product.id,
             "product_name": product.product_name,
@@ -738,6 +819,7 @@ class ProductUpdateView(APIView):
         # Save updated product
         product.updated_by = user
         product.save()
+        log.audit.success(f"Product updated successfully | {product.product_name} | {user}")
 
         return Response({"detail": "Product updated successfully."}, status=status.HTTP_200_OK)
 
@@ -828,7 +910,7 @@ class ProductDeleteView(APIView):
         # Soft delete by setting `is_active` to False
         product.is_active = False
         product.save()
-
+        log.audit.success(f"Product deleted successfully | {product.product_name} | {user}")
         return Response({"detail": "Product deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
 
 
@@ -967,12 +1049,12 @@ class CreateInvoiceView(APIView):
                 # invoice.total_amount = total_amount
                 invoice.save()
                 invoice_transactions = create_invoice_transaction(customer=customer, 
-                                    products=transaction_products, total_amount=total_amount, user=request.user)
-
+                                    products=transaction_products, total_amount=total_amount, user=request.user, is_paid=is_paid)
+            log.audit.sucess(f"Invoice created successfully | {invoice.id} | {request.user}")
             return Response({"invoice_id": invoice.id, "message": "Invoice created successfully."}, status=status.HTTP_201_CREATED)
 
         except Exception as e:
-            logger.exception("Error occured", exc_info=True)
+            log.trace.trace(f"Error occured while creating Invoice {traceback.format_exc()}")
             return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
 
@@ -992,7 +1074,7 @@ class ListInvoicesView(APIView):
             return Response({"detail": "Invalid or expired token."}, status=status.HTTP_401_UNAUTHORIZED)
 
         invoices = Invoice.objects.filter(is_active=True).values(
-            "id", "customer__display_name", "customer_email", "total_amount", "bill_date", "due_date", "is_paid"
+            "id", "customer__display_name", "customer_email", "customer__mobile_number", "total_amount", "bill_date", "due_date", "is_paid"
         )
         invoice_list = list(invoices)  # Convert queryset to list of dicts
         return Response(invoice_list, status=status.HTTP_200_OK)
@@ -1069,16 +1151,20 @@ class InvoicePaidView(APIView):
                 if invoice.is_paid:
                     return Response("Invoice is already paid", status=status.HTTP_200_OK)
                 invoice.is_paid = True
+                customer = Customer.objects.get(id=invoice.customer.id)
+                payment_transaction = process_invoice_payment(customer=customer, payment_amount=invoice.total_amount, user=user)
                 invoice.save()
+                log.audit.success(f"Invoice marked as paid | {invoice.id} | {request.user}")
                 return Response("Invoice is paid", status=status.HTTP_200_OK)
             else:
+                log.app.error(f"Invoice not found")
                 return Response("No changes done", status=status.HTTP_200_OK)
 
         except Invoice.DoesNotExist:
-            logger.exception("Invoice does not exist", exc_info=True)
+            log.trace.trace("Invoice does not exist")
             return Response({"detail": "Invoice not found."}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
-            logger.exception("Error retrieving invoice", exc_info=True)
+            log.trace.trace(f"Error retrieving invoice {traceback.format_exc()}")
             return Response({"detail": "Error retrieving invoice."}, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -1215,6 +1301,16 @@ class SendInvoiceView(APIView):
                 "customer": invoice.customer,
                 "items": items_data,
             }
+            cc_email = invoice.customer_email_cc
+            if cc_email:
+                cc_email = cc_email.split(",")
+            else:
+                cc_email = []
+            bcc_email = invoice.customer_email_bcc
+            if bcc_email:
+                bcc_email = bcc_email.split(",")
+            else:
+                bcc_email = []
 
             # Define PDF path
             pdf_folder = os.path.join(settings.MEDIA_ROOT, 'pdfs')
@@ -1231,13 +1327,13 @@ class SendInvoiceView(APIView):
 
             # Send email with the PDF
             send_email_with_pdf(invoice.customer_email, pdf_path, invoice.id)
-
+            log.audit.success(f"Invoice send successfully | {invoice.id} | {request.user}")
             return Response({"message": "Invoice sent successfully"}, status=status.HTTP_200_OK)
 
         except Invoice.DoesNotExist:
             return Response({"detail": "Invoice not found."}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
-            print(traceback.format_exc())
+            log.trace.trace(f"Error while sending Invoice | {invoice.id} | {traceback.format_exc()}")
             return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -1281,7 +1377,7 @@ def generate_pdf(html_string, pdf_path):
     driver.quit()
 
 
-def send_email_with_pdf(email, pdf_path, invoice_id):
+def send_email_with_pdf(email, pdf_path, invoice_id, cc_email = [],bcc_email = []):
     from django.core.mail import EmailMessage
     with open(pdf_path, 'rb') as pdf_file:
         email = EmailMessage(
@@ -1289,6 +1385,8 @@ def send_email_with_pdf(email, pdf_path, invoice_id):
             body="Please find attached your invoice.",
             from_email=settings.DEFAULT_FROM_EMAIL,
             to=[email],
+            cc=cc_email,
+            bcc=bcc_email
         )
         email.attach(f"Invoice_{invoice_id}.pdf", pdf_file.read(), "application/pdf")
         email.send()
@@ -1335,12 +1433,13 @@ class DownloadInvoiceView(APIView):
                 generate_pdf(html_string, pdf_path)
 
             # Return the PDF as a response
+            log.app.info(f"Invoice generated successfully | {invoice_id} | {request.user}")
             return FileResponse(open(pdf_path, 'rb'), as_attachment=True, filename=f"Invoice_{invoice_id}.pdf")
 
         except Invoice.DoesNotExist:
             return Response({"detail": "Invoice not found."}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
-            print(traceback.format_exc())
+            log.trace.trace(f"Error while downloading Invoice | {invoice_id} | {traceback.format_exc()}")
             return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -1484,6 +1583,7 @@ class CreateBillView(APIView):
                 )
 
                 # Process each item in the invoice
+                transaction_products = []
                 for item_data in items:
                     product = Product.objects.get(id=item_data['product_id'])
                     quantity = float(item_data['quantity'])
@@ -1510,6 +1610,10 @@ class CreateBillView(APIView):
                     product.save()
                     line_total = unit_price * quantity_in_tiles
 
+                    transaction_products.append({'quantity': quantity_in_tiles, 
+                                                  "product_name": product.product_name,
+                                                  "unit_price": unit_price})
+
                     # Create invoice item
                     BillItems.objects.create(
                         bill=bill,
@@ -1525,13 +1629,17 @@ class CreateBillView(APIView):
 
                 # Update the invoice's total amount after processing all items
                 # invoice.total_amount = total_amount
+                bill_payment = create_bill_transaction(vendor=vendor, products=transaction_products,
+                                                       total_amount=total_amount, user=request.user,
+                                                       is_paid=is_paid)
                 bill.save()
 
+            log.audit.success(f"Bill created successfully | {bill.id} | {user}")
             return Response({"invoice_id": bill.bill_number, "message": "Bill created successfully."}, status=status.HTTP_201_CREATED)
 
         except Exception as e:
-            logger.exception("Error occured", exc_info=True)
-            return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            log.trace.trace(f"Error occured while creating bill, {traceback.format_exc()}")
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class ListBillsView(APIView):
@@ -1609,10 +1717,14 @@ class BillPaidView(APIView):
                 bill = Bill.objects.get(id=id, is_active=True)
                 if bill.is_paid:
                     return Response("bill is already paid", status=status.HTTP_200_OK)
+                vendor = Vendor.objects.get(id=bill.vendor.id)
                 bill.is_paid = True
+                bill_transaction = process_bill_payment(vendor=vendor, payment_amount=bill.total_amount, user=user)
                 bill.save()
+                log.audit.success(f"Bill payment done | {bill.id} | {user}")
                 return Response("bill is paid", status=status.HTTP_200_OK)
             else:
+                log.app.error(f"Bill payment already done | {bill.id} | {user}")
                 return Response("No changes done", status=status.HTTP_200_OK)
 
         except bill.DoesNotExist:

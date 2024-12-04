@@ -10,10 +10,10 @@ from rest_framework.views import APIView
 from rest_framework.permissions import IsAdminUser,AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 import requests
-import logging
-
+from radiantplanks_backend.logging import log
+# from loguru import logger
 # Get the default logger
-logger = logging.getLogger('custom_logger')
+# logger = logging.getLogger('custom_logger')
 # trace_logger = logging.getLogger('trace_logger')
 
 class RegisterAPIView(APIView):
@@ -28,8 +28,10 @@ class RegisterAPIView(APIView):
         
         # Check if email or username already exists
         if NewUser.objects.filter(email=email).exists():
+            log.app.error('Email already exists')
             return Response({"error": "Email already in use"}, status=status.HTTP_400_BAD_REQUEST)
         if NewUser.objects.filter(username=username).exists():
+            log.app.error('Username already exists')
             return Response({"error": "Username already in use"}, status=status.HTTP_400_BAD_REQUEST)
         
         # Create the user
@@ -41,6 +43,7 @@ class RegisterAPIView(APIView):
         )
         user.set_password(password)
         user.save()
+        log.audit.success(f"User added successfully | {username} | ")
         
         return Response({"message": "User registered successfully"}, status=status.HTTP_201_CREATED)
 
@@ -75,7 +78,7 @@ class LoginView(APIView):
             user.save()
 
             token = RefreshToken.for_user(user)
-            logger.info(f"User logged in : {user.username} | logintime : {user.last_login}")
+            log.audit.success(f"User logged in : {user.username} | logintime : {user.last_login}")
             return Response({
                 'refresh': str(token),
                 'access': str(token.access_token),
@@ -83,7 +86,7 @@ class LoginView(APIView):
             })
 
         except NewUser.DoesNotExist:
-            logger.exception("Exception : User does not exsists", exc_info=True)
+            log.trace.trace("Exception : User does not exsists")
             raise exceptions.AuthenticationFailed('Invalid credentials')
 
     def get_geolocation(self, ip):
