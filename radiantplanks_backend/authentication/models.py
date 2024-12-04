@@ -98,8 +98,9 @@ class AuditLog(models.Model):
     record_id = models.IntegerField()  # ID of the affected record
     timestamp = models.DateTimeField(auto_now_add=True)
     details = models.CharField(max_length=200, null=True, blank=True)  # Flexible additional info
-    last_login_city = models.CharField(max_length=100, null=True, blank=True)
-    last_login_country = models.CharField(max_length=100, null=True, blank=True)
+    activity_ip = models.CharField(max_length=100, null=True, blank=True)
+    activity_city = models.CharField(max_length=100, null=True, blank=True)
+    activity_country = models.CharField(max_length=100, null=True, blank=True)
 
     class Meta:
         indexes = [

@@ -50,6 +50,7 @@ class Vendor(models.Model):
     company = models.CharField(max_length=100, blank=True, null=True)
     email = models.EmailField(unique=True)
     phone = models.CharField(max_length=15)
+    mobile_number = models.CharField(max_length=15)
     created_by = models.ForeignKey(NewUser, on_delete=models.SET_NULL, related_name='vendor_created_by', null=True)
     created_date = models.DateTimeField(auto_now_add=True)
     updated_by = models.ForeignKey(NewUser, on_delete=models.SET_NULL, related_name='vendor_updated_by', null=True)

@@ -13,17 +13,32 @@ import requests
 from radiantplanks_backend.logging import log
 import traceback
 
-def audit_log(user, action, model_name=None, record_id=None, additional_details=None):
+def get_geolocation_based_on_ip(ip):
+    url = f"https://ipinfo.io/{ip}/json"
+    try:
+        response = requests.get(url)
+        if response.status_code == 200:
+            return response.json()
+    except requests.RequestException:
+        pass
+    return {}
+
+def audit_log(user, action,  ip_add, model_name=None, record_id=None, additional_details=None):
     """
     Simple utility function for creating audit logs
     """
     try:
+        # Get geolocation based on IP
+        geolocation = get_geolocation_based_on_ip(ip_add)
         AuditLog.objects.create(
             user=user,
             action=action,
             model_name=model_name,
             record_id=record_id,
-            details=additional_details
+            details=additional_details,
+            activity_ip=ip_add,
+            activity_city=geolocation.get("city",""),
+            activity_country=geolocation.get("country","")
         )
         return True
     except Exception as e:
@@ -61,7 +76,11 @@ class RegisterAPIView(APIView):
         user.set_password(password)
         user.save()
         log.audit.success(f"User added successfully | {username} | ")
-        
+        audit_log_entry = audit_log(user=request.user,
+                              action="Create User", 
+                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              model_name="NewUser", 
+                              record_id=user.id)
         return Response({"message": "User registered successfully"}, status=status.HTTP_201_CREATED)
 
 
@@ -102,6 +121,11 @@ class LoginView(APIView):
 
             token = RefreshToken.for_user(user)
             log.audit.success(f"User logged in : {user.username} | logintime : {user.last_login}")
+            audit_log_entry = audit_log(user=user,
+                              action="Login", 
+                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              model_name="NewUser", 
+                              record_id=user.id)
             return Response({
                 'refresh': str(token),
                 'access': str(token.access_token),

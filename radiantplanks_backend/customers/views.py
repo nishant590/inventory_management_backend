@@ -224,6 +224,7 @@ class VendorCreateView(APIView):
                     company=data.get('company', ''),
                     email=data['email'],
                     phone=data['phone'],
+                    mobile_number=data['mobile_number'],
                     created_by=request.user,
                     created_date=timezone.now(),
                     updated_by=request.user,
@@ -267,6 +268,7 @@ class VendorListView(APIView):
                 "company": vendor.company,
                 "email": vendor.email,
                 "phone": vendor.phone,
+                "mobile_number": vendor.mobile_number,
                 "is_active": vendor.is_active,
                 "addresses": list(vendor.vendor_addresses.values()),
                 "created_date": vendor.created_date,
@@ -298,6 +300,7 @@ class VendorEditView(APIView):
         vendor.company = data.get("company", vendor.company)
         vendor.email = data.get("email", vendor.email)
         vendor.phone = data.get("phone", vendor.phone)
+        vendor.mobile_number = data.get("mobile_number", vendor.phone)
         vendor.updated_by = request.user
         vendor.updated_date = timezone.now()
         vendor.save()
