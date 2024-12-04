@@ -40,6 +40,8 @@ from django.db.models import Max
 # import logging
 from loguru import logger
 from radiantplanks_backend.logging import log
+import asyncio
+from pyppeteer import launch
 # Get the default logger
 # logger = logging.getLogger('custom_logger')
 # Category Views
@@ -1125,10 +1127,10 @@ class RetrieveInvoiceView(APIView):
             return Response(invoice_data, status=status.HTTP_200_OK)
 
         except Invoice.DoesNotExist:
-            logger.exception("Invoice does not exist", exc_info=True)
+            log.trace.trace(f"Invoice does not exist, {traceback.format_exc()}")
             return Response({"detail": "Invoice not found."}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
-            logger.exception("Error retrieving invoice", exc_info=True)
+            log.trace.trace(f"Error retrieving invoice {traceback.format_exc()}", exc_info=True)
             return Response({"detail": "Error retrieving invoice."}, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -1161,7 +1163,7 @@ class InvoicePaidView(APIView):
                 return Response("No changes done", status=status.HTTP_200_OK)
 
         except Invoice.DoesNotExist:
-            log.trace.trace("Invoice does not exist")
+            log.trace.trace(f"Invoice does not exist {traceback.format_exc()}")
             return Response({"detail": "Invoice not found."}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             log.trace.trace(f"Error retrieving invoice {traceback.format_exc()}")
@@ -1326,7 +1328,9 @@ class SendInvoiceView(APIView):
                 generate_pdf(html_string, pdf_path)
 
             # Send email with the PDF
-            send_email_with_pdf(invoice.customer_email, pdf_path, invoice.id)
+            send_email_with_pdf(email=invoice.customer_email, 
+                                pdf_path=pdf_path, invoice_id=invoice.id,
+                                cc_email=cc_email, bcc_email=bcc_email)
             log.audit.success(f"Invoice send successfully | {invoice.id} | {request.user}")
             return Response({"message": "Invoice sent successfully"}, status=status.HTTP_200_OK)
 
@@ -1335,6 +1339,38 @@ class SendInvoiceView(APIView):
         except Exception as e:
             log.trace.trace(f"Error while sending Invoice | {invoice.id} | {traceback.format_exc()}")
             return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+def generate_pdf_sync(html_string, pdf_path):
+
+    async def generate_pdf_v2(html_string, pdf_path):
+        browser = await launch(headless=True,
+                                executablePath='C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
+                                args=['--no-sandbox', '--disable-setuid-sandbox'])
+        page = await browser.newPage()
+
+        # Set the content of the page to the HTML string
+        await page.setContent(html_string)
+
+        # Generate PDF
+        await page.pdf({
+            'path': pdf_path,
+            'format': 'A4',
+            'margin': {
+                'top': '0.39in',
+                'bottom': '0.39in',
+                'left': '0.39in',
+                'right': '0.39in'
+            },
+            'printBackground': True
+        })
+
+        print(f"PDF generated at: {pdf_path}")
+
+        await browser.close()
+
+    # Use asyncio to run the async function synchronously
+    asyncio.run(generate_pdf_v2(html_string, pdf_path))
 
 
 def generate_pdf(html_string, pdf_path):
@@ -1379,15 +1415,17 @@ def generate_pdf(html_string, pdf_path):
 
 def send_email_with_pdf(email, pdf_path, invoice_id, cc_email = [],bcc_email = []):
     from django.core.mail import EmailMessage
+    html_content = render_to_string('mail_template.html')
     with open(pdf_path, 'rb') as pdf_file:
         email = EmailMessage(
             subject=f"Invoice #{invoice_id}",
-            body="Please find attached your invoice.",
+            body=html_content,
             from_email=settings.DEFAULT_FROM_EMAIL,
             to=[email],
             cc=cc_email,
             bcc=bcc_email
         )
+        email.content_subtype = 'html'
         email.attach(f"Invoice_{invoice_id}.pdf", pdf_file.read(), "application/pdf")
         email.send()
 
@@ -1728,8 +1766,8 @@ class BillPaidView(APIView):
                 return Response("No changes done", status=status.HTTP_200_OK)
 
         except bill.DoesNotExist:
-            logger.exception("bill does not exist", exc_info=True)
+            log.trace.trace(f"bill does not exist {traceback.format_exc()}")
             return Response({"detail": "bill not found."}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
-            logger.exception("Error retrieving bill", exc_info=True)
+            log.trace.trace(f"Error retrieving bill {traceback.format_exc()}")
             return Response({"detail": "Error retrieving bill."}, status=status.HTTP_400_BAD_REQUEST)

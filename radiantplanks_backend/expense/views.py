@@ -37,7 +37,7 @@ from radiantplanks_backend.logging import log
 import logging
 
 # Get the default logger
-logger = logging.getLogger('custom_logger')
+# logger = logging.getLogger('custom_logger')
 
 def generate_short_unique_filename(extension):
     # Shortened UUID (6 characters) + Unix timestamp for uniqueness
@@ -181,7 +181,7 @@ class ExpenseListView(APIView):
     def get(self, request):
         user = self.get_user_from_token(request)
         if not user:
-            logger.error("User not found")
+            log.app.error("User not found")
             return Response({"detail": "User not found"}, status=status.HTTP_401_UNAUTHORIZED)
         expenses = Expense.objects.filter(is_active=True).order_by('-created_date')
         try:
@@ -199,7 +199,7 @@ class ExpenseListView(APIView):
             ]
             return Response(expense_list, status=status.HTTP_200_OK)
         except Exception as e:
-            logger.exception("Error occured", exc_info=True)
+            log.app.trace(f"Error occured {traceback.format_exc()}")
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -224,11 +224,11 @@ class ExpenseDetailView(APIView):
     def get(self, request, id):
         user = self.get_user_from_token(request)
         if not user:
-            logger.error("User not found")
+            log.app.error("User not found")
             return Response({"detail": "User not found"}, status=status.HTTP_401_UNAUTHORIZED)
         expense = self.get_object(id)
         if not expense:
-            logger.error("Expense not found")
+            log.app.error("Expense not found")
             return Response("Expense does not exist", status=status.HTTP_404_NOT_FOUND)
         try:
             items = ExpenseItems.objects.filter(expense=expense)
@@ -256,7 +256,7 @@ class ExpenseDetailView(APIView):
 
             return Response(expense_data, status=status.HTTP_200_OK)
         except Exception as e:
-            logger.error(f"Error fetching expense data: {e}")
-            logger.exception(f"Error:", exc_info=True)
+            log.app.error(f"Error fetching expense data: {e}")
+            log.trace.trace(f"Error: {traceback.format_exc()}")
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 

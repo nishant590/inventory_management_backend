@@ -4,8 +4,9 @@ from rest_framework import exceptions
 from .models import NewUser
 import jwt
 import logging
+from radiantplanks_backend.logging import log
 
-logger = logging.getLogger(__name__)
+# logger = logging.getLogger(__name__)
 
 class JWTAuthentication(BaseAuthentication):
     def authenticate(self, request):
@@ -23,8 +24,8 @@ class JWTAuthentication(BaseAuthentication):
             print(user)
             return (user, token)
         except jwt.ExpiredSignatureError as e:
-            logger.error(f"Token expired: {e}")
+            log.app.error(f"Token expired: {e}")
             raise exceptions.AuthenticationFailed('Token has expired')
         except (jwt.InvalidTokenError, NewUser.DoesNotExist) as e:
-            logger.error(f"Authentication failed: {e}")
+            log.app.error(f"Authentication failed: {e}")
             raise exceptions.AuthenticationFailed('Invalid token')
