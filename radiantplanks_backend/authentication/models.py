@@ -86,3 +86,27 @@ class NewUser(models.Model):
             "permissions": [p.code for p in self.permissions.all()]
         }
         return jwt.encode(payload, secret_key, algorithm="HS256")
+
+
+class AuditLog(models.Model):
+    """
+    Simple and lightweight audit logging model
+    """
+    user = models.ForeignKey(NewUser, on_delete=models.CASCADE)
+    action = models.CharField(max_length=100)  # e.g., 'create_product', 'update_invoice'
+    model_name = models.CharField(max_length=100)  # e.g., 'Product', 'Invoice'
+    record_id = models.IntegerField()  # ID of the affected record
+    timestamp = models.DateTimeField(auto_now_add=True)
+    details = models.CharField(max_length=200, null=True, blank=True)  # Flexible additional info
+    last_login_city = models.CharField(max_length=100, null=True, blank=True)
+    last_login_country = models.CharField(max_length=100, null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['user', 'action', 'timestamp']),
+            models.Index(fields=['model_name', 'record_id'])
+        ]
+        ordering = ['-timestamp']
+
+    def __str__(self):
+        return f"{self.user.username} - {self.action} on {self.model_name}"

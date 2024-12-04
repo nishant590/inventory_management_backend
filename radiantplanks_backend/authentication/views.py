@@ -2,7 +2,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.utils import timezone
-from .models import NewUser, NewGroup, NewPermission
+from .models import NewUser, NewGroup, NewPermission, AuditLog
 from .serializers import UserSerializer, LoginSerializer
 from rest_framework import exceptions
 from django.conf import settings
@@ -11,10 +11,27 @@ from rest_framework.permissions import IsAdminUser,AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 import requests
 from radiantplanks_backend.logging import log
-# from loguru import logger
-# Get the default logger
-# logger = logging.getLogger('custom_logger')
-# trace_logger = logging.getLogger('trace_logger')
+import traceback
+
+def audit_log(user, action, model_name=None, record_id=None, additional_details=None):
+    """
+    Simple utility function for creating audit logs
+    """
+    try:
+        AuditLog.objects.create(
+            user=user,
+            action=action,
+            model_name=model_name,
+            record_id=record_id,
+            details=additional_details
+        )
+        return True
+    except Exception as e:
+        # Basic error logging - could be replaced with proper logging
+        log.app.error(f"Error creating audit log: {str(e)}")
+        log.trace.trace(f"Error creating audit log: {traceback.format_exc()}")
+        return False
+
 
 class RegisterAPIView(APIView):
     permission_classes = [AllowAny]
@@ -61,6 +78,9 @@ class LoginView(APIView):
         try:
             user = NewUser.objects.get(email=email)
             if not user.check_password(password):
+                log.app.error('Invalid password')
+                user.failed_login_attempts += 1
+                user.save()
                 raise exceptions.AuthenticationFailed('Invalid credentials')
 
             if not user.is_active:
@@ -69,12 +89,15 @@ class LoginView(APIView):
             # Capture IP and get geolocation
             ip_address = request.META.get('REMOTE_ADDR')
             geo_data = self.get_geolocation(ip_address)
+            last_login_time = user.last_login
+            last_login_ip = user.last_login_ip
 
             # Update login stats
             user.last_login = timezone.now()
             user.last_login_ip = ip_address
             user.last_login_city = geo_data.get('city')
             user.last_login_country = geo_data.get('country')
+            user.failed_login_attempts = 0
             user.save()
 
             token = RefreshToken.for_user(user)
@@ -82,7 +105,9 @@ class LoginView(APIView):
             return Response({
                 'refresh': str(token),
                 'access': str(token.access_token),
-                'user': UserSerializer(user).data
+                'user': UserSerializer(user).data,
+                'last_login_time': last_login_time,
+                'last_login_ip': last_login_ip
             })
 
         except NewUser.DoesNotExist:
