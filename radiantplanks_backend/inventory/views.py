@@ -1415,17 +1415,17 @@ def generate_pdf(html_string, pdf_path):
 
 def send_email_with_pdf(email, pdf_path, invoice_id, cc_email = [],bcc_email = []):
     from django.core.mail import EmailMessage
-    html_content = render_to_string('mail_template.html')
+    # html_content = render_to_string('mail_template.html')
     with open(pdf_path, 'rb') as pdf_file:
         email = EmailMessage(
             subject=f"Invoice #{invoice_id}",
-            body=html_content,
+            body="Please find attached your invoice.",
             from_email=settings.DEFAULT_FROM_EMAIL,
             to=[email],
             cc=cc_email,
             bcc=bcc_email
         )
-        email.content_subtype = 'html'
+        # email.content_subtype = 'html'
         email.attach(f"Invoice_{invoice_id}.pdf", pdf_file.read(), "application/pdf")
         email.send()
 
