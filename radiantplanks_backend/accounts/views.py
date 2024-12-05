@@ -10,6 +10,7 @@ from decimal import Decimal
 import pandas as pd
 from radiantplanks_backend.logging import log
 import traceback
+from authentication.views import audit_log
 
 
 class AddAccountAPI(APIView):
@@ -58,6 +59,11 @@ class AddAccountAPI(APIView):
 
             # Return success response
             log.audit.success(f"Account created successfully | {account.name} | {request.user}")
+            audit_log_entry = audit_log(user=request.user,
+                              action="Account Created", 
+                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              model_name="NewUser", 
+                              record_id=account.id)
             return Response(
                 {"message": "Account created successfully!", "data": {
                     "name": account.name,
@@ -132,6 +138,11 @@ class AccountReceivablesView(APIView):
             
             # Convert DataFrame back to a dictionary
             receivables_data = df.to_dict(orient="records")
+            audit_log_entry = audit_log(user=request.user,
+                              action="Receivable Reports viewed", 
+                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              model_name="ReceivableTracking", 
+                              record_id=0)
             
             return Response(
                 {
@@ -182,7 +193,11 @@ class AccountPayablesView(APIView):
             
             # Convert DataFrame back to a dictionary
             payables_data = df.to_dict(orient="records")
-            
+            audit_log_entry = audit_log(user=request.user,
+                              action="Payable Reports viewed", 
+                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              model_name="PayableTracking", 
+                              record_id=0)
             return Response(
                 {
                     "data": payables_data,

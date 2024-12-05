@@ -34,10 +34,8 @@ from selenium.webdriver.chrome.options import Options
 import base64
 from django.db.models import Max
 from radiantplanks_backend.logging import log
-import logging
+from authentication.views import audit_log
 
-# Get the default logger
-# logger = logging.getLogger('custom_logger')
 
 def generate_short_unique_filename(extension):
     # Shortened UUID (6 characters) + Unix timestamp for uniqueness
@@ -159,6 +157,11 @@ class CreateExpenseView(APIView):
                     account.save()
 
                 expense.save()
+            audit_log_entry = audit_log(user=request.user,
+                              action="Expense Created", 
+                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              model_name="Expense", 
+                              record_id=expense.id)
             log.audit.success(f"Expense created successfully | {expense.id} | {user}")
             return Response({"invoice_id": expense.expense_number, "message": "Expense created successfully."}, status=status.HTTP_201_CREATED)
         except Exception as e:

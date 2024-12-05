@@ -42,6 +42,7 @@ from loguru import logger
 from radiantplanks_backend.logging import log
 import asyncio
 from pyppeteer import launch
+from authentication.views import audit_log
 # Get the default logger
 # logger = logging.getLogger('custom_logger')
 # Category Views
@@ -402,6 +403,11 @@ class CategoryListCreateView(APIView):
 
         # Create the Category instance
         category = Category.objects.create(name=category_name, created_by=user)
+        audit_log_entry = audit_log(user=request.user,
+                              action="Category Created", 
+                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              model_name="Category", 
+                              record_id=category.id)
         log.audit.success(f"Category created successfully | {category.name} | {category.created_by}")
         log.app.info(f"Category created successfully | {category.name} | {category.created_by}")
         # Return the created category data
@@ -478,6 +484,11 @@ class CategoryUpdateView(APIView):
 
         category.updated_by = user
         category.save()
+        audit_log_entry = audit_log(user=request.user,
+                              action="Category Edited", 
+                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              model_name="Category", 
+                              record_id=category.id)
         log.audit.success(f"Category updated successfully | {category.name} | {category.created_by}")
         
         return Response({
@@ -516,6 +527,11 @@ class CategoryDeleteView(APIView):
         # Soft delete by setting `is_active` to False
         category.is_active = False
         category.save()
+        audit_log_entry = audit_log(user=request.user,
+                              action="Category Deleted", 
+                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              model_name="Category", 
+                              record_id=category.id)
         log.audit.success(f"Category {category.name} deleted successfully | {category.name} | {user}")
         return Response({"detail": "Category deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
 
@@ -702,6 +718,11 @@ class ProductCreateView(APIView):
                                                       created_by = user)
 
         log.audit.success(f"Product added to inventory successfully | {product_name} | {user}")
+        audit_log_entry = audit_log(user=request.user,
+                              action="Product created", 
+                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              model_name="Product", 
+                              record_id=product.id)
         return Response({
             "id": product.id,
             "product_name": product.product_name,
@@ -821,6 +842,12 @@ class ProductUpdateView(APIView):
         # Save updated product
         product.updated_by = user
         product.save()
+
+        audit_log_entry = audit_log(user=request.user,
+                              action="Product Updated", 
+                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              model_name="Product", 
+                              record_id=product.id)
         log.audit.success(f"Product updated successfully | {product.product_name} | {user}")
 
         return Response({"detail": "Product updated successfully."}, status=status.HTTP_200_OK)
@@ -912,6 +939,11 @@ class ProductDeleteView(APIView):
         # Soft delete by setting `is_active` to False
         product.is_active = False
         product.save()
+        audit_log_entry = audit_log(user=request.user,
+                              action="Product created", 
+                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              model_name="Product", 
+                              record_id=product.id)
         log.audit.success(f"Product deleted successfully | {product.product_name} | {user}")
         return Response({"detail": "Product deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
 
@@ -1052,6 +1084,11 @@ class CreateInvoiceView(APIView):
                 invoice.save()
                 invoice_transactions = create_invoice_transaction(customer=customer, 
                                     products=transaction_products, total_amount=total_amount, user=request.user, is_paid=is_paid)
+            audit_log_entry = audit_log(user=request.user,
+                              action="Invoice created", 
+                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              model_name="Invoice", 
+                              record_id=invoice.id)
             log.audit.success(f"Invoice created successfully | {invoice.id} | {request.user}")
             return Response({"invoice_id": invoice.id, "message": "Invoice created successfully."}, status=status.HTTP_201_CREATED)
 
@@ -1331,6 +1368,11 @@ class SendInvoiceView(APIView):
             send_email_with_pdf(email=invoice.customer_email, 
                                 pdf_path=pdf_path, invoice_id=invoice.id,
                                 cc_email=cc_email, bcc_email=bcc_email)
+            audit_log_entry = audit_log(user=request.user,
+                              action="Invoice Sent", 
+                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              model_name="Invoice", 
+                              record_id=invoice.id)
             log.audit.success(f"Invoice send successfully | {invoice.id} | {request.user}")
             return Response({"message": "Invoice sent successfully"}, status=status.HTTP_200_OK)
 
@@ -1471,6 +1513,11 @@ class DownloadInvoiceView(APIView):
                 generate_pdf(html_string, pdf_path)
 
             # Return the PDF as a response
+            audit_log_entry = audit_log(user=request.user,
+                              action="Invoice Downloaded", 
+                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              model_name="Invoice", 
+                              record_id=invoice.id)
             log.app.info(f"Invoice generated successfully | {invoice_id} | {request.user}")
             return FileResponse(open(pdf_path, 'rb'), as_attachment=True, filename=f"Invoice_{invoice_id}.pdf")
 
@@ -1672,6 +1719,11 @@ class CreateBillView(APIView):
                                                        is_paid=is_paid)
                 bill.save()
 
+            audit_log_entry = audit_log(user=request.user,
+                              action="Bill Created", 
+                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              model_name="Bill", 
+                              record_id=bill.id)
             log.audit.success(f"Bill created successfully | {bill.id} | {user}")
             return Response({"invoice_id": bill.bill_number, "message": "Bill created successfully."}, status=status.HTTP_201_CREATED)
 

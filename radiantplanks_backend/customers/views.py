@@ -12,6 +12,7 @@ import traceback
 import jwt
 from django.conf import settings
 from authentication.models import NewUser
+from authentication.views import audit_log
 
 class CustomerCreateView(APIView):
     permission_classes = [IsAuthenticated]
@@ -81,6 +82,11 @@ class CustomerCreateView(APIView):
                         postal_code=addr_data.get('postal_code', ''),
                         country=addr_data.get('country', 'Unknown')
                     )
+            audit_log_entry = audit_log(user=request.user,
+                              action="Customer created", 
+                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              model_name="Customer", 
+                              record_id=customer.customer_id)
             log.audit.success(f"Customer created successfully | {customer.display_name} | {request.user} ")
 
             return Response({'message': 'Customer created successfully'}, status=status.HTTP_201_CREATED)
@@ -199,7 +205,11 @@ class CustomerEditView(APIView):
                     postal_code=addr_data.get('postal_code', ''),
                     country=addr_data.get('country', 'Unknown')
                 )
-        
+        audit_log_entry = audit_log(user=request.user,
+                              action="Customer Edited", 
+                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              model_name="Customer", 
+                              record_id=customer.customer_id)
         log.audit.success(f"Customer updated successfully | {customer.display_name} | {request.user} ")
         return Response({"message": "Customer updated successfully"}, status=status.HTTP_200_OK)
     
@@ -215,6 +225,11 @@ class CustomerDeleteView(APIView):
             customer.updated_date = timezone.now()
             customer.save()
             log.audit.success(f"Customer deactivated successfully | {customer.display_name} | {request.user}")
+            audit_log_entry = audit_log(user=request.user,
+                              action="Customer Deleted", 
+                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              model_name="Customer", 
+                              record_id=customer.customer_id)
             return Response({"message": "Customer deactivated successfully"}, status=status.HTTP_200_OK)
         except Customer.DoesNotExist:
             return Response({"error": "Customer not found"}, status=status.HTTP_404_NOT_FOUND)
@@ -290,6 +305,11 @@ class VendorCreateView(APIView):
                         postal_code=addr_data.get('postal_code', ''),
                         country=addr_data.get('country', 'Unknown')
                     )
+            audit_log_entry = audit_log(user=request.user,
+                              action="Vendor Created", 
+                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              model_name="Vendor", 
+                              record_id=vendor.vendor_id)
             log.audit.success(f"Vendor created successfully | {vendor.display_name} | {request.user} ")
             return Response({'message': 'Vendor created successfully'}, status=status.HTTP_201_CREATED)
 
@@ -371,6 +391,11 @@ class VendorEditView(APIView):
                     postal_code=addr_data.get('postal_code', ''),
                     country=addr_data.get('country', 'Unknown')
                 )
+        audit_log_entry = audit_log(user=request.user,
+                              action="Vendor Edited", 
+                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              model_name="Vendor", 
+                              record_id=vendor.vendor_id)
         log.audit.success(f"Vendor updated successfully | {vendor.display_name} | {request.user} ")
         return Response({"message": "Vendor updated successfully"}, status=status.HTTP_200_OK)
     
@@ -386,6 +411,11 @@ class VendorDeleteView(APIView):
             vendor.updated_date = timezone.now()
             vendor.save()
             log.audit.success(f"Vendor deactivated successfully | {vendor.display_name} | {request.user}")
+            audit_log_entry = audit_log(user=request.user,
+                              action="Vendor Deleted", 
+                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              model_name="Vendor", 
+                              record_id=vendor.vendor_id)
             return Response({"message": "vendor deactivated successfully"}, status=status.HTTP_200_OK)
         except Vendor.DoesNotExist:
             log.trace.trace(f"Vendor deactivated failed | {traceback.format_exc()}") 
