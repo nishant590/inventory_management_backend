@@ -114,11 +114,11 @@ class AccountReceivablesView(APIView):
         try:
             # Fetch data from the database directly as a queryset
             receivables = ReceivableTracking.objects.values(
-                "customer__display_name", "payable_amount"
+                "customer__business_name", "payable_amount"
             )
             
             # Convert the queryset to a pandas DataFrame
-            df = pd.DataFrame.from_records(receivables, columns=["customer__display_name", "receivable_amount"])
+            df = pd.DataFrame.from_records(receivables, columns=["customer__business_name", "receivable_amount"])
             
             if df.empty:
                 # Handle empty table scenario
@@ -131,7 +131,7 @@ class AccountReceivablesView(APIView):
                 )
             
             # Rename columns for a clean response
-            df.rename(columns={"customer__display_name": "customer"}, inplace=True)
+            df.rename(columns={"customer__business_name": "customer"}, inplace=True)
             
             # Calculate overall receivable amount
             overall_receivable = df["receivable_amount"].sum()
@@ -169,11 +169,11 @@ class AccountPayablesView(APIView):
         try:
             # Fetch data from the database directly as a queryset
             payables = PayableTracking.objects.values(
-                "vendor__display_name", "payable_amount"
+                "vendor__business_name", "payable_amount"
             )
             
             # Convert the queryset to a pandas DataFrame
-            df = pd.DataFrame.from_records(payables, columns=["vendor__display_name", "payable_amount"])
+            df = pd.DataFrame.from_records(payables, columns=["vendor__business_name", "payable_amount"])
             
             if df.empty:
                 # Handle empty table scenario
@@ -186,7 +186,7 @@ class AccountPayablesView(APIView):
                 )
             
             # Rename columns for a clean response
-            df.rename(columns={"vendor__display_name": "vendor"}, inplace=True)
+            df.rename(columns={"vendor__business_name": "vendor"}, inplace=True)
             
             # Calculate overall receivable amount
             overall_receivable = df["payable_amount"].sum()

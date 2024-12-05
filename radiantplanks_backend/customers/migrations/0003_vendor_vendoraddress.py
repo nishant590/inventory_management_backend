@@ -19,7 +19,7 @@ class Migration(migrations.Migration):
                 ('first_name', models.CharField(max_length=50)),
                 ('middle_name', models.CharField(blank=True, max_length=50, null=True)),
                 ('last_name', models.CharField(max_length=50)),
-                ('display_name', models.CharField(max_length=100)),
+                ('business_name', models.CharField(max_length=100)),
                 ('company', models.CharField(blank=True, max_length=100, null=True)),
                 ('email', models.EmailField(max_length=254, unique=True)),
                 ('phone', models.CharField(max_length=15)),

@@ -8,9 +8,11 @@ class Customer(models.Model):
     first_name = models.CharField(max_length=50)
     middle_name = models.CharField(max_length=50, blank=True, null=True)
     last_name = models.CharField(max_length=50)
-    display_name = models.CharField(max_length=100)
+    business_name = models.CharField(max_length=120)
     company = models.CharField(max_length=100, blank=True, null=True)
     email = models.EmailField(unique=True)
+    cc_email = models.EmailField(blank=True, null=True)
+    bcc_email = models.EmailField(blank=True, null=True)
     phone = models.CharField(max_length=15, null=True)
     mobile_number = models.CharField(max_length=15, null=True)
     # payments = models.CharField(max_length=20, choices=[('cash', 'Cash'), ('check', 'Check'),('credit card','Credit Card')], default="cash")
@@ -23,7 +25,7 @@ class Customer(models.Model):
 
 
     def __str__(self):
-        return self.display_name
+        return self.business_name
 
 
 class Address(models.Model):
@@ -38,7 +40,7 @@ class Address(models.Model):
     country = models.CharField(max_length=100, null=True, blank=True)
 
     def __str__(self):
-        return f"{self.address_type.capitalize()} Address for {self.customer.display_name}"
+        return f"{self.address_type.capitalize()} Address for {self.customer.business_name}"
 
 
 class Vendor(models.Model):
@@ -46,9 +48,11 @@ class Vendor(models.Model):
     first_name = models.CharField(max_length=50)
     middle_name = models.CharField(max_length=50, blank=True, null=True)
     last_name = models.CharField(max_length=50)
-    display_name = models.CharField(max_length=100)
+    business_name = models.CharField(max_length=120)
     company = models.CharField(max_length=100, blank=True, null=True)
     email = models.EmailField(unique=True)
+    cc_email = models.EmailField(null=True, blank=True)
+    bcc_email = models.EmailField(null=True, blank=True)
     phone = models.CharField(max_length=15)
     mobile_number = models.CharField(max_length=15)
     created_by = models.ForeignKey(NewUser, on_delete=models.SET_NULL, related_name='vendor_created_by', null=True)
@@ -58,7 +62,7 @@ class Vendor(models.Model):
     is_active = models.BooleanField(default=True)
 
     def __str__(self):
-        return self.display_name
+        return self.business_name
 
 
 class VendorAddress(models.Model):
@@ -73,5 +77,5 @@ class VendorAddress(models.Model):
     country = models.CharField(max_length=100)
 
     def __str__(self):
-        return f"{self.address_type.capitalize()} Address for {self.vendor.display_name}"
+        return f"{self.address_type.capitalize()} Address for {self.vendor.business_name}"
 

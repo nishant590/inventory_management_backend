@@ -58,9 +58,11 @@ class CustomerCreateView(APIView):
                     first_name=data['first_name'],
                     middle_name=data.get('middle_name', ''),
                     last_name=data['last_name'],
-                    display_name=data.get('display_name', f"{data['first_name']} {data['last_name']}"),
+                    business_name=data.get('business_name', f"{data['first_name']} {data['last_name']}"),
                     company=data.get('company', ''),
                     email=data['email'],
+                    cc_email=data.get('cc_email', ''),
+                    bcc_email=data.get('bcc_email', ''),
                     phone=data.get("phone",""),
                     mobile_number=data.get("mobile_number"),
                     created_by=request.user,
@@ -87,7 +89,7 @@ class CustomerCreateView(APIView):
                               ip_add=request.META.get('REMOTE_ADDR'), 
                               model_name="Customer", 
                               record_id=customer.customer_id)
-            log.audit.success(f"Customer created successfully | {customer.display_name} | {request.user} ")
+            log.audit.success(f"Customer created successfully | {customer.business_name} | {request.user} ")
 
             return Response({'message': 'Customer created successfully'}, status=status.HTTP_201_CREATED)
 
@@ -107,7 +109,7 @@ class CustomerListView(APIView):
                 "first_name": customer.first_name,
                 "middle_name": customer.middle_name,
                 "last_name": customer.last_name,
-                "display_name": customer.display_name,
+                "business_name": customer.business_name,
                 "company": customer.company,
                 "email": customer.email,
                 "phone": customer.phone,
@@ -152,9 +154,11 @@ class CustomerDetailView(APIView):
                 "first_name": customer.first_name,
                 "middle_name": customer.middle_name,
                 "last_name": customer.last_name,
-                "display_name": customer.display_name,
+                "business_name": customer.business_name,
                 "company": customer.company,
                 "email": customer.email,
+                "cc_email": customer.cc_email,
+                "bcc_email": customer.bcc_email,
                 "phone": customer.phone,
                 "mobile_number": customer.mobile_number,
                 "addresses": list(customer_add)
@@ -182,9 +186,11 @@ class CustomerEditView(APIView):
         customer.first_name = data.get("first_name", customer.first_name)
         customer.middle_name = data.get("middle_name", customer.middle_name)
         customer.last_name = data.get("last_name", customer.last_name)
-        customer.display_name = data.get("display_name", customer.display_name)
+        customer.business_name = data.get("business_name", customer.business_name)
         customer.company = data.get("company", customer.company)
         customer.email = data.get("email", customer.email)
+        customer.cc_email = data.get("cc_email", customer.cc_email)
+        customer.bcc_email = data.get("bcc_email", customer.bcc_email)
         customer.phone = data.get("phone", customer.phone)
         customer.mobile_number = data.get("mobile_number", customer.phone)
         customer.updated_by = request.user
@@ -210,7 +216,7 @@ class CustomerEditView(APIView):
                               ip_add=request.META.get('REMOTE_ADDR'), 
                               model_name="Customer", 
                               record_id=customer.customer_id)
-        log.audit.success(f"Customer updated successfully | {customer.display_name} | {request.user} ")
+        log.audit.success(f"Customer updated successfully | {customer.business_name} | {request.user} ")
         return Response({"message": "Customer updated successfully"}, status=status.HTTP_200_OK)
     
 
@@ -224,7 +230,7 @@ class CustomerDeleteView(APIView):
             customer.updated_by = request.user  # Optionally track who deactivated
             customer.updated_date = timezone.now()
             customer.save()
-            log.audit.success(f"Customer deactivated successfully | {customer.display_name} | {request.user}")
+            log.audit.success(f"Customer deactivated successfully | {customer.business_name} | {request.user}")
             audit_log_entry = audit_log(user=request.user,
                               action="Customer Deleted", 
                               ip_add=request.META.get('REMOTE_ADDR'), 
@@ -281,9 +287,11 @@ class VendorCreateView(APIView):
                     first_name=data['first_name'],
                     middle_name=data.get('middle_name', ''),
                     last_name=data['last_name'],
-                    display_name=data.get('display_name', f"{data['first_name']} {data['last_name']}"),
+                    business_name=data.get('business_name', f"{data['first_name']} {data['last_name']}"),
                     company=data.get('company', ''),
                     email=data['email'],
+                    cc_email=data.get('cc_email', ''),
+                    bcc_email=data.get('bcc_email', ''),
                     phone=data['phone'],
                     mobile_number=data['mobile_number'],
                     created_by=request.user,
@@ -310,7 +318,7 @@ class VendorCreateView(APIView):
                               ip_add=request.META.get('REMOTE_ADDR'), 
                               model_name="Vendor", 
                               record_id=vendor.vendor_id)
-            log.audit.success(f"Vendor created successfully | {vendor.display_name} | {request.user} ")
+            log.audit.success(f"Vendor created successfully | {vendor.business_name} | {request.user} ")
             return Response({'message': 'Vendor created successfully'}, status=status.HTTP_201_CREATED)
 
         except Exception as e:
@@ -330,7 +338,7 @@ class VendorListView(APIView):
                 "first_name": vendor.first_name,
                 "middle_name": vendor.middle_name,
                 "last_name": vendor.last_name,
-                "display_name": vendor.display_name,
+                "business_name": vendor.business_name,
                 "company": vendor.company,
                 "email": vendor.email,
                 "phone": vendor.phone,
@@ -368,9 +376,11 @@ class VendorEditView(APIView):
         vendor.first_name = data.get("first_name", vendor.first_name)
         vendor.middle_name = data.get("middle_name", vendor.middle_name)
         vendor.last_name = data.get("last_name", vendor.last_name)
-        vendor.display_name = data.get("display_name", vendor.display_name)
+        vendor.business_name = data.get("business_name", vendor.business_name)
         vendor.company = data.get("company", vendor.company)
         vendor.email = data.get("email", vendor.email)
+        vendor.cc_email = data.get("cc_email", vendor.cc_email)
+        vendor.bcc_email = data.get("bcc_email", vendor.bcc_email)
         vendor.phone = data.get("phone", vendor.phone)
         vendor.mobile_number = data.get("mobile_number", vendor.phone)
         vendor.updated_by = request.user
@@ -396,7 +406,7 @@ class VendorEditView(APIView):
                               ip_add=request.META.get('REMOTE_ADDR'), 
                               model_name="Vendor", 
                               record_id=vendor.vendor_id)
-        log.audit.success(f"Vendor updated successfully | {vendor.display_name} | {request.user} ")
+        log.audit.success(f"Vendor updated successfully | {vendor.business_name} | {request.user} ")
         return Response({"message": "Vendor updated successfully"}, status=status.HTTP_200_OK)
     
 
@@ -410,7 +420,7 @@ class VendorDeleteView(APIView):
             vendor.updated_by = request.user  # Optionally track who deactivated
             vendor.updated_date = timezone.now()
             vendor.save()
-            log.audit.success(f"Vendor deactivated successfully | {vendor.display_name} | {request.user}")
+            log.audit.success(f"Vendor deactivated successfully | {vendor.business_name} | {request.user}")
             audit_log_entry = audit_log(user=request.user,
                               action="Vendor Deleted", 
                               ip_add=request.META.get('REMOTE_ADDR'), 
@@ -452,9 +462,11 @@ class VendorRetriveView(APIView):
                 "first_name": vendor.first_name,
                 "middle_name": vendor.middle_name,
                 "last_name": vendor.last_name,
-                "display_name": vendor.display_name,
+                "business_name": vendor.business_name,
                 "company": vendor.company,
                 "email": vendor.email,
+                "cc_email": vendor.cc_email,
+                "bcc_email": vendor.bcc_email,
                 "phone": vendor.phone,
                 "mobile_number": vendor.mobile_number,
                 "addresses": list(vendor_add)

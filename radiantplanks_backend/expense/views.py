@@ -113,7 +113,7 @@ class CreateExpenseView(APIView):
                     reference_number=expense_number,
                     transaction_type="expense",
                     date=payment_date,
-                    description=f"Expense for vendor {vendor.display_name}",
+                    description=f"Expense for vendor {vendor.business_name}",
                     is_reconciled=False,
                     tax_amount=0,  # Adjust if tax is applicable
                     attachment=attachments_url,
@@ -124,7 +124,7 @@ class CreateExpenseView(APIView):
                 TransactionLine.objects.create(
                     transaction=transaction,
                     account=expense_account,
-                    description=f"Payment to vendor: {vendor.display_name}",
+                    description=f"Payment to vendor: {vendor.business_name}",
                     debit_amount=total_amount,
                     credit_amount=0
                 )
@@ -191,7 +191,7 @@ class ExpenseListView(APIView):
             expense_list = [
                 {
                     "id": expense.id,
-                    "vendor": expense.vendor.display_name,  # Assuming the vendor has a `name` field
+                    "vendor": expense.vendor.business_name,  # Assuming the vendor has a `name` field
                     "expense_number": expense.expense_number,
                     "payment_date": expense.payment_date,
                     "total_amount": float(expense.total_amount),
@@ -237,7 +237,7 @@ class ExpenseDetailView(APIView):
             items = ExpenseItems.objects.filter(expense=expense)
             expense_data = {
                 "id": expense.id,
-                "vendor": expense.vendor.display_name,  # Assuming the vendor has a `name` field
+                "vendor": expense.vendor.business_name,  # Assuming the vendor has a `name` field
                 "expense_number": expense.expense_number,
                 "payment_date": expense.payment_date,
                 "total_amount": float(expense.total_amount),

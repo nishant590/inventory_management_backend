@@ -131,7 +131,7 @@ class ReceivableTracking(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"{self.customer.display_name} - {self.receivable_amount}"
+        return f"{self.customer.business_name} - {self.receivable_amount}"
 
 
 class PayableTracking(models.Model):
@@ -141,4 +141,4 @@ class PayableTracking(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"{self.vendor.display_name} - {self.payable_amount}"
+        return f"{self.vendor.business_name} - {self.payable_amount}"

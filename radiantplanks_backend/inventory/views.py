@@ -133,7 +133,7 @@ def create_invoice_transaction(customer, products, total_amount, user, is_paid):
             reference_number=f"INV-{uuid.uuid4().hex[:6].upper()}",
             transaction_type='income',
             date=datetime.now(),
-            description=f"Invoice for customer {customer.display_name}",
+            description=f"Invoice for customer {customer.business_name}",
             created_by=user  # Assuming you have request context
         )
         inv_total_cost = 0
@@ -158,7 +158,7 @@ def create_invoice_transaction(customer, products, total_amount, user, is_paid):
             TransactionLine.objects.create(
                 transaction=transaction,
                 account=bank_account,
-                description=f"Payment received from {customer.display_name}",
+                description=f"Payment received from {customer.business_name}",
                 debit_amount=0,
                 credit_amount=total_amount
             )
@@ -168,7 +168,7 @@ def create_invoice_transaction(customer, products, total_amount, user, is_paid):
             TransactionLine.objects.create(
                 transaction=transaction,
                 account=receivable_account,
-                description=f"Account receivable for invoice to {customer.display_name}",
+                description=f"Account receivable for invoice to {customer.business_name}",
                 debit_amount=0,
                 credit_amount=total_amount,
             )
@@ -202,7 +202,7 @@ def process_invoice_payment(customer, payment_amount, user):
             reference_number=f"PAY-{uuid.uuid4().hex[:6].upper()}",
             transaction_type='income',
             date=datetime.now(),
-            description=f"Payment received from {customer.display_name}",
+            description=f"Payment received from {customer.business_name}",
             created_by=user  # Assuming you have request context
         )
 
@@ -210,7 +210,7 @@ def process_invoice_payment(customer, payment_amount, user):
         TransactionLine.objects.create(
             transaction=transaction,
             account=bank_account,
-            description=f"Payment received from {customer.display_name}",
+            description=f"Payment received from {customer.business_name}",
             debit_amount=0,
             credit_amount=payment_amount,
         )
@@ -219,7 +219,7 @@ def process_invoice_payment(customer, payment_amount, user):
         TransactionLine.objects.create(
             transaction=transaction,
             account=receivable_account,
-            description=f"Clear receivable for {customer.display_name}",
+            description=f"Clear receivable for {customer.business_name}",
             debit_amount=payment_amount,
             credit_amount=0,
         )
@@ -230,7 +230,7 @@ def process_invoice_payment(customer, payment_amount, user):
         receivable_account.balance -= Decimal(payment_amount)
         receivable.save()
         receivable_account.save()
-        log.app.info(f"Invoice paid by {customer.display_name}")
+        log.app.info(f"Invoice paid by {customer.business_name}")
         return True
     except Exception as e:
         log.trace.trace(f"Error occured: {traceback.format_exc()}")
@@ -250,7 +250,7 @@ def process_bill_payment(vendor, payment_amount, user):
             reference_number=f"PAY-{uuid.uuid4().hex[:6].upper()}",
             transaction_type='expense',
             date=datetime.now(),
-            description=f"Payment for {vendor.display_name}",
+            description=f"Payment for {vendor.business_name}",
             created_by=user  # Assuming you have request context
         )
 
@@ -258,7 +258,7 @@ def process_bill_payment(vendor, payment_amount, user):
         TransactionLine.objects.create(
             transaction=transaction,
             account=bank_account,
-            description=f"Payment for {vendor.display_name}",
+            description=f"Payment for {vendor.business_name}",
             debit_amount=payment_amount,
             credit_amount=0,
         )
@@ -267,7 +267,7 @@ def process_bill_payment(vendor, payment_amount, user):
         TransactionLine.objects.create(
             transaction=transaction,
             account=payable_account,
-            description=f"Clear payable for {vendor.display_name}",
+            description=f"Clear payable for {vendor.business_name}",
             debit_amount=payment_amount,
             credit_amount=0,
         )
@@ -300,7 +300,7 @@ def create_bill_transaction(vendor, products, total_amount, user, is_paid):
             reference_number=f"BILL-{uuid.uuid4().hex[:6].upper()}",
             transaction_type='expense',
             date=datetime.now(),
-            description=f"Bill for vendor {vendor.display_name}",
+            description=f"Bill for vendor {vendor.business_name}",
             created_by=user
         )
 
@@ -328,7 +328,7 @@ def create_bill_transaction(vendor, products, total_amount, user, is_paid):
             TransactionLine.objects.create(
                 transaction=transaction,
                 account=payable_account,
-                description=f"Accounts payable for bill to {vendor.display_name}",
+                description=f"Accounts payable for bill to {vendor.business_name}",
                 debit_amount=0,
                 credit_amount=total_amount,
             )
@@ -342,7 +342,7 @@ def create_bill_transaction(vendor, products, total_amount, user, is_paid):
             TransactionLine.objects.create(
                 transaction=transaction,
                 account=bank_account,
-                description=f"Payment for bill to {vendor.display_name}",
+                description=f"Payment for bill to {vendor.business_name}",
                 debit_amount=0,
                 credit_amount=total_amount,
             )
@@ -1113,7 +1113,7 @@ class ListInvoicesView(APIView):
             return Response({"detail": "Invalid or expired token."}, status=status.HTTP_401_UNAUTHORIZED)
 
         invoices = Invoice.objects.filter(is_active=True).values(
-            "id", "customer__display_name", "customer_email", "customer__mobile_number", "total_amount", "bill_date", "due_date", "is_paid"
+            "id", "customer__business_name", "customer_email", "customer__mobile_number", "total_amount", "bill_date", "due_date", "is_paid"
         )
         invoice_list = list(invoices)  # Convert queryset to list of dicts
         return Response(invoice_list, status=status.HTTP_200_OK)
@@ -1139,7 +1139,7 @@ class RetrieveInvoiceView(APIView):
 
             invoice_data = {
                 "id": invoice.id,
-                "customer": invoice.customer.display_name,
+                "customer": invoice.customer.business_name,
                 "customer_email": invoice.customer_email,
                 "customer_email_cc": invoice.customer_email_cc,
                 "customer_email_bcc": invoice.customer_email_bcc,
@@ -1748,7 +1748,7 @@ class ListBillsView(APIView):
             return Response({"detail": "Invalid or expired token."}, status=status.HTTP_401_UNAUTHORIZED)
 
         bills = Bill.objects.filter(is_active=True).values("id",
-            "bill_number", "vendor__display_name", "vendor__email",  "total_amount", "bill_date", "due_date", "is_paid"
+            "bill_number", "vendor__business_name", "vendor__email",  "total_amount", "bill_date", "due_date", "is_paid"
         )
         bill_list = list(bills)  # Convert queryset to list of dicts
         return Response(bill_list, status=status.HTTP_200_OK)
@@ -1776,7 +1776,7 @@ class RetrieveBillView(APIView):
             )
             bill_data = {
                 "bill_number": bill.bill_number,
-                "vendor": bill.vendor.display_name,
+                "vendor": bill.vendor.business_name,
                 "bill_date": bill.bill_date,
                 "due_date": bill.due_date,
                 "total_amount": bill.total_amount,
