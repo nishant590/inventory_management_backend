@@ -89,6 +89,11 @@ class ProductAccountMapping(models.Model):
 
 
 class Invoice(models.Model):
+    PAYMENT_STATUS_CHOICES = (
+        ("unpaid", "Unpaid"),
+        ("partially paid", "Partially Paid"),
+        ("paid", "Paid"),
+    )
     customer = models.ForeignKey(Customer, on_delete=models.CASCADE)
     customer_email = models.CharField(max_length=100, null=True)
     customer_email_cc = models.CharField(max_length=255, null=True, blank=True)  # For CC/BCC
@@ -107,7 +112,11 @@ class Invoice(models.Model):
     tax_percentage = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
     tax_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
     total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
-    is_paid = models.BooleanField(default=False)
+    paid_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
+    unpaid_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
+    payment_status = models.CharField(
+        max_length=20, choices=PAYMENT_STATUS_CHOICES, default="unpaid"
+    )
     attachments = models.CharField(max_length=255, null=True, blank=True)
     created_by = models.ForeignKey(NewUser, on_delete=models.CASCADE, related_name="invoice_created_by")
     created_date = models.DateTimeField(default=timezone.now)
@@ -172,6 +181,11 @@ class EstimateItem(models.Model):
     
 
 class Bill(models.Model):
+    PAYMENT_STATUS_CHOICES = (
+        ("unpaid", "Unpaid"),
+        ("partially paid", "Partially Paid"),
+        ("paid", "Paid"),
+    )
     vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE)
     mailing_address = models.TextField(null=True, blank=True)
     bill_number = models.CharField(max_length=255, null=True, blank=True)
@@ -179,8 +193,12 @@ class Bill(models.Model):
     terms = models.TextField(null=True, blank=True)
     bill_date = models.DateTimeField(default=timezone.now)
     due_date = models.DateTimeField(default=timezone.now)
-    total_amount = models.DecimalField(max_digits=10, decimal_places=2)
-    is_paid = models.BooleanField(default=False)
+    total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    paid_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    unpaid_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    payment_status = models.CharField(
+        max_length=20, choices=PAYMENT_STATUS_CHOICES, default="unpaid"
+    )
     memo = models.TextField(null=True, blank=True)
     attachments = models.CharField(max_length=255, null=True, blank=True)
     created_by = models.ForeignKey(NewUser, on_delete=models.CASCADE, related_name="bill_created_by", null=True)

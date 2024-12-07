@@ -24,7 +24,13 @@ from io import BytesIO
 from customers.models import Customer, Vendor
 from django.utils import timezone
 from django.core.mail import EmailMessage
-from accounts.models import Account, Transaction, TransactionLine, ReceivableTracking, PayableTracking
+from accounts.models import (Account, 
+        Transaction, 
+        TransactionLine, 
+        ReceivableTracking, 
+        PayableTracking, 
+        CustomerPaymentDetails, 
+        VendorPaymentDetails)
 from django.template.loader import render_to_string
 import math
 import uuid
@@ -119,75 +125,96 @@ def add_inventory_transaction(product_name, quantity, unit_cost, inventory_accou
         return False
     
 
-def create_invoice_transaction(customer, products, total_amount, user, is_paid):
+def create_invoice_transaction(customer, products, total_amount, user):
     """
-    Adjust inventory and create account receivable for the invoice.
+    Adjust inventory, create account receivable, and log transactions for cost of goods sold and sales revenue.
     """
     try:
+        # Fetch accounts
         inventory_account = Account.objects.get(account_type='inventory')  # Inventory account
         receivable_account = Account.objects.get(account_type='accounts_receivable')  # Accounts Receivable account
-        bank_account = Account.objects.get(account_type='bank')  # Accounts Receivable account
-        
+        cogs_account = Account.objects.get(account_type='cost_of_goods_sold')  # Cost of Goods Sold account
+        sales_revenue_account = Account.objects.get(account_type='sales_revenue')  # Sales Revenue account
+
         # Create a new transaction
         transaction = Transaction.objects.create(
             reference_number=f"INV-{uuid.uuid4().hex[:6].upper()}",
             transaction_type='income',
             date=datetime.now(),
             description=f"Invoice for customer {customer.business_name}",
-            created_by=user  # Assuming you have request context
+            created_by=user
         )
+        
         inv_total_cost = 0
-        # Adjust inventory and add account receivable
+
+        # Adjust inventory and log revenue and COGS
         for product in products:
             product_name = product.get("product_name")
             quantity = Decimal(product.get("quantity"))
-            unit_cost = Decimal(product.get("unit_price"))
-            temp_total_cost = quantity * unit_cost
-            inv_total_cost += temp_total_cost
-            # Deduct inventory (credit inventory account)
+            unit_cost = Decimal(product.get("unit_cost"))  # Unit cost for inventory valuation
+            unit_price = Decimal(product.get("unit_price"))  # Selling price per unit
+            total_cost = quantity * unit_cost
+            total_revenue = quantity * unit_price
+            inv_total_cost += total_cost
+
+            # Reduce inventory (credit inventory account)
             TransactionLine.objects.create(
                 transaction=transaction,
                 account=inventory_account,
                 description=f"Inventory adjustment for {product_name}",
                 debit_amount=0,
-                credit_amount=temp_total_cost,
+                credit_amount=total_cost,
             )
 
-        # Add receivable (debit receivables account)
-        if is_paid:
+            # Log cost of goods sold (debit COGS)
             TransactionLine.objects.create(
                 transaction=transaction,
-                account=bank_account,
-                description=f"Payment received from {customer.business_name}",
-                debit_amount=0,
-                credit_amount=total_amount
+                account=cogs_account,
+                description=f"Cost of goods sold for {product_name}",
+                debit_amount=total_cost,
+                credit_amount=0,
             )
 
-            bank_account.balance += Decimal(total_amount)
-        else:
+            # Log sales revenue (credit revenue account)
             TransactionLine.objects.create(
                 transaction=transaction,
-                account=receivable_account,
-                description=f"Account receivable for invoice to {customer.business_name}",
+                account=sales_revenue_account,
+                description=f"Sales revenue for {product_name}",
                 debit_amount=0,
-                credit_amount=total_amount,
+                credit_amount=total_revenue,
             )
 
-        # Update receivable tracking
-            receivable, created = ReceivableTracking.objects.get_or_create(customer=customer)
-            receivable.receivable_amount += Decimal(total_amount)
-            receivable_account.balance += Decimal(total_amount)
-            receivable.save()
+        # Increase accounts receivable (debit accounts receivable)
+        TransactionLine.objects.create(
+            transaction=transaction,
+            account=receivable_account,
+            description=f"Account receivable for invoice to {customer.business_name}",
+            debit_amount=total_amount,
+            credit_amount=0,
+        )
+
+        # Update account balances
         inventory_account.balance -= Decimal(inv_total_cost)
+        receivable_account.balance += Decimal(total_amount)
+        cogs_account.balance += Decimal(inv_total_cost)
+        sales_revenue_account.balance += Decimal(total_amount)
+        
         inventory_account.save()
         receivable_account.save()
-        bank_account.save()
-        log.app.info("Invoice Transaction completed") 
-        return True
-    except Exception as e:
-        log.trace.trace(f"Error occured: {traceback.format_exc()}")
-        return False   
+        cogs_account.save()
+        sales_revenue_account.save()
 
+        # Log receivable tracking
+        receivable, created = ReceivableTracking.objects.get_or_create(customer=customer)
+        receivable.receivable_amount += Decimal(total_amount)
+        receivable.save()
+
+        log.app.info("Invoice Transaction completed successfully")
+        return True
+
+    except Exception as e:
+        log.trace.trace(f"Error occurred: {traceback.format_exc()}")
+        return False
 
 def process_invoice_payment(customer, payment_amount, user):
     """
@@ -237,13 +264,12 @@ def process_invoice_payment(customer, payment_amount, user):
         return False
 
 
-def process_bill_payment(vendor, payment_amount, user):
+def process_bill_payment(vendor, payment_amount, bank_account, user):
     """
     Process payment for a customer and update accounts.
     """
     try:
         payable_account = Account.objects.get(account_type='accounts_payable')  # Accounts Receivable account
-        bank_account = Account.objects.get(account_type='bank')  # Bank account
         
         # Create a new transaction
         transaction = Transaction.objects.create(
@@ -293,7 +319,6 @@ def create_bill_transaction(vendor, products, total_amount, user, is_paid):
     try:
         inventory_account = Account.objects.get(account_type='inventory')  # Inventory account
         payable_account = Account.objects.get(account_type='accounts_payable')  # Accounts Payable account
-        bank_account = Account.objects.get(account_type='bank')  # Main Bank Account
 
         # Create a new transaction
         transaction = Transaction.objects.create(
@@ -323,33 +348,19 @@ def create_bill_transaction(vendor, products, total_amount, user, is_paid):
                 credit_amount=0,
             )
 
-        if not is_paid:
-            # Add payable (credit accounts payable account)
-            TransactionLine.objects.create(
-                transaction=transaction,
-                account=payable_account,
-                description=f"Accounts payable for bill to {vendor.business_name}",
-                debit_amount=0,
-                credit_amount=total_amount,
-            )
+        # Add payable (credit accounts payable account)
+        TransactionLine.objects.create(
+            transaction=transaction,
+            account=payable_account,
+            description=f"Accounts payable for bill to {vendor.business_name}",
+            debit_amount=0,
+            credit_amount=total_amount,
+        )
 
-            # Update payable tracking
-            payable, created = PayableTracking.objects.get_or_create(vendor=vendor)
-            payable.payable_amount += Decimal(total_amount)
-            payable.save()
-        else:
-            # Reduce bank balance (credit bank account)
-            TransactionLine.objects.create(
-                transaction=transaction,
-                account=bank_account,
-                description=f"Payment for bill to {vendor.business_name}",
-                debit_amount=0,
-                credit_amount=total_amount,
-            )
-
-            # Update bank account balance
-            bank_account.balance -= Decimal(total_amount)
-
+        # Update payable tracking
+        payable, created = PayableTracking.objects.get_or_create(vendor=vendor)
+        payable.payable_amount += Decimal(total_amount)
+        payable.save()
         # Update account balances
         inventory_account.balance += Decimal(inv_total_cost)
         if not is_paid:
@@ -357,7 +368,6 @@ def create_bill_transaction(vendor, products, total_amount, user, is_paid):
 
         inventory_account.save()
         payable_account.save()
-        bank_account.save()
 
         log.app.info("Bill Transaction completed")
         return True
@@ -995,9 +1005,11 @@ class CreateInvoiceView(APIView):
                 tax_percentage = float(data.get("tax_percentage"))
                 tax_amount = float(data.get("tax_amount"))
                 total_amount = float(data.get("total_amount"))
-                is_paid = data.get("is_paid")
-                if isinstance(is_paid, str):
-                    is_paid = is_paid.lower() in ['true', '1', 'yes', 'y']
+                payment_status = data.get("payment_status")
+                if isinstance(payment_status, str):
+                    payment_status = payment_status.lower()
+                else:
+                    payment_status = "unpaid"
                 attachments = request.FILES.get("attachments")
 
                 if attachments:
@@ -1027,7 +1039,7 @@ class CreateInvoiceView(APIView):
                     is_taxed = is_taxed, 
                     tax_percentage = tax_percentage, 
                     tax_amount = tax_amount, 
-                    is_paid = is_paid,
+                    payment_status = payment_status,
                     total_amount=total_amount,
                     attachments=attachments_url,
                     created_date=timezone.now(),
@@ -1083,7 +1095,7 @@ class CreateInvoiceView(APIView):
                 # invoice.total_amount = total_amount
                 invoice.save()
                 invoice_transactions = create_invoice_transaction(customer=customer, 
-                                    products=transaction_products, total_amount=total_amount, user=request.user, is_paid=is_paid)
+                                    products=transaction_products, total_amount=total_amount, user=request.user)
             audit_log_entry = audit_log(user=request.user,
                               action="Invoice created", 
                               ip_add=request.META.get('REMOTE_ADDR'), 
@@ -1170,7 +1182,7 @@ class RetrieveInvoiceView(APIView):
             log.trace.trace(f"Error retrieving invoice {traceback.format_exc()}", exc_info=True)
             return Response({"detail": "Error retrieving invoice."}, status=status.HTTP_400_BAD_REQUEST)
 
-
+        
 class InvoicePaidView(APIView):
     def get_user_from_token(self, request):
         token = request.headers.get("Authorization", "").split(" ")[1]
@@ -1180,33 +1192,151 @@ class InvoicePaidView(APIView):
             return NewUser.objects.get(id=user_id)
         except (jwt.ExpiredSignatureError, jwt.DecodeError, NewUser.DoesNotExist):
             return None
-        
-    def patch(self, request, id):
+
+    def patch(self, request):
+        """
+        Mark one or more invoices as fully or partially paid, handle tracking, 
+        and record the payment details for the customer.
+        """
         try:
             user = self.get_user_from_token(request)
-            is_paid = request.data.get('is_paid')
-            if is_paid:
-                invoice = Invoice.objects.get(id=id, is_active=True)
-                if invoice.is_paid:
-                    return Response("Invoice is already paid", status=status.HTTP_200_OK)
-                invoice.is_paid = True
-                customer = Customer.objects.get(customer_id=invoice.customer.customer_id)
-                payment_transaction = process_invoice_payment(customer=customer, payment_amount=invoice.total_amount, user=user)
+            if not user:
+                return Response({"detail": "Invalid user token."}, status=status.HTTP_401_UNAUTHORIZED)
+
+            # Get the request data
+            invoices_data = request.data.get("invoices", [])  # List of invoice IDs and amounts
+            payment_amount = Decimal(request.data.get("payment_amount"))
+            # payment_details = request.data.get("payment_details", {}) # JSON with method, transaction ID, etc.
+            customer_id = request.data.get("customer_id")
+            credit_account_id = request.data.get("credit_account_id")  # Bank/Cash account ID
+
+            if payment_amount <= 0:
+                return Response({"detail": "Invalid payment amount."}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Retrieve customer, receivable tracking, and credit account
+            customer = Customer.objects.get(customer_id=customer_id, is_active=True)
+            receivable = ReceivableTracking.objects.get(customer=customer)
+            accounts_recievable = Account.objects.get(account_type='accounts_receivable')
+            credit_account = Account.objects.get(id=credit_account_id, is_active=True)
+
+            total_allocated = Decimal("0.00")
+            transactions_to_log = []
+
+            # Loop through each invoice and allocate payment
+            for invoice_data in invoices_data:
+                invoice_id = invoice_data.get("invoice_id")
+                allocated_amount = Decimal(invoice_data.get("allocated_amount", 0))
+
+                if allocated_amount <= 0:
+                    continue  # Skip invalid or zero allocations
+
+                invoice = Invoice.objects.get(id=invoice_id, customer=customer, is_active=True)
+
+                # Calculate payment for the invoice
+                if invoice.unpaid_amount == 0:
+                    return Response({"Details":"Invoice are already paid"}, status=status.HTTP_400_BAD_REQUEST)
+                payment_for_invoice = min(allocated_amount, invoice.unpaid_amount)
+
+                # Update invoice
+                invoice.paid_amount += payment_for_invoice
+                invoice.unpaid_amount -= payment_for_invoice
+                invoice.payment_status = "paid" if invoice.unpaid_amount == 0 else "partially_paid"
                 invoice.save()
-                log.audit.success(f"Invoice marked as paid | {invoice.id} | {request.user}")
-                return Response("Invoice is paid", status=status.HTTP_200_OK)
-            else:
-                log.app.error(f"Invoice not found")
-                return Response("No changes done", status=status.HTTP_200_OK)
 
+                # Add to total allocated
+                total_allocated += payment_for_invoice
+
+                # Record invoice transaction
+                transactions_to_log.append({
+                    "description": f"Payment for invoice {invoice.id}",
+                    "debit_amount": payment_for_invoice,
+                    "credit_amount": 0,
+                })
+
+            if total_allocated > payment_amount:
+                return Response({"detail": "Payment amount is insufficient for allocation."}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Update receivable tracking
+            receivable.receivable_amount -= Decimal(total_allocated)
+            accounts_recievable.balance -= Decimal(total_allocated)
+
+            # Handle overpayment
+            overpayment = Decimal(payment_amount) - Decimal(total_allocated)
+            if overpayment > 0:
+                receivable.prepayment_amount += Decimal(overpayment)
+
+            # Create a transaction for the payment
+            with db_transaction.atomic():
+                transaction = Transaction.objects.create(
+                    reference_number=f"PAY-{uuid.uuid4().hex[:6].upper()}",
+                    transaction_type="income",
+                    date=datetime.now(),
+                    description=f"Payment received from customer {customer.business_name}",
+                    tax_amount=0,
+                    is_active=True,
+                    created_by=user,
+                )
+
+                # Log each transaction line
+                for line in transactions_to_log:
+                    TransactionLine.objects.create(
+                        transaction=transaction,
+                        account=Account.objects.get(account_type="accounts_receivable"),
+                        description=line["description"],
+                        debit_amount=line["debit_amount"],
+                        credit_amount=line["credit_amount"],
+                    )
+
+                # Log credit to bank/cash account
+                TransactionLine.objects.create(
+                    transaction=transaction,
+                    account=credit_account,
+                    description=f"Payment credited for customer {customer.business_name}",
+                    debit_amount=0,
+                    credit_amount=payment_amount,
+                )
+
+                # Save payment details in CustomerPaymentDetail
+                CustomerPaymentDetails.objects.create(
+                    customer=customer,
+                    transaction=transaction,
+                    payment_method=request.data.get("payment_method", ""),
+                    transaction_reference_id=request.data.get("transaction_id", ""),
+                    bank_name=request.data.get("bank_name", ""),
+                    cheque_number=request.data.get("cheque_number", ""),
+                    payment_date=datetime.now(),
+                    payment_amount=payment_amount,
+                )
+                credit_account.balance += Decimal(payment_amount)
+                receivable.save()
+
+                credit_account.save()
+                accounts_recievable.save()
+
+            # Log and return response
+            log.audit.success(f"Payments applied for customer {customer.business_name} | User: {user}")
+            return Response({"detail": f"Payment processed successfully for customer {customer.business_name}."}, status=status.HTTP_200_OK)
+
+        except Customer.DoesNotExist:
+            log.app.error("Customer Not found")
+            return Response({"detail": "Customer not found."}, status=status.HTTP_404_NOT_FOUND)
         except Invoice.DoesNotExist:
-            log.trace.trace(f"Invoice does not exist {traceback.format_exc()}")
-            return Response({"detail": "Invoice not found."}, status=status.HTTP_404_NOT_FOUND)
+            log.app.error("Invoice Not found")
+            return Response({"detail": "One or more invoices not found."}, status=status.HTTP_404_NOT_FOUND)
+        except ReceivableTracking.DoesNotExist:
+            log.app.error("Receivable tracking Not found")
+            return Response({"detail": "Receivable tracking not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Account.DoesNotExist:
+            log.app.error("Account Not found")
+            return Response({"detail": "Specified credit account not found."}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
-            log.trace.trace(f"Error retrieving invoice {traceback.format_exc()}")
-            return Response({"detail": "Error retrieving invoice."}, status=status.HTTP_400_BAD_REQUEST)
+            log.app.error(f"Error processing payment: {str(e)}")
+            log.trace.trace(f"Error processing invoice payments {traceback.format_exc()}")
+            return Response({"detail": "Error processing payment."}, status=status.HTTP_400_BAD_REQUEST)
 
 
+
+# class 
 # class SendInvoiceView(APIView):
 #     def post(self, request, invoice_id):
 #         try:
@@ -1635,9 +1765,11 @@ class CreateBillView(APIView):
                 due_date = data.get("due_date")
                 memo = data.get("memo")
                 total_amount = float(data.get("total_amount"))
-                is_paid = data.get("is_paid")
-                if isinstance(is_paid, str):
-                    is_paid = is_paid.lower() in ['true', '1', 'yes', 'y']
+                payment_status = data.get("payment_status")
+                if isinstance(payment_status, str):
+                    payment_status = payment_status.lower()
+                else:
+                    payment_status = "unpaid"
                 attachments = request.FILES.get("attachments")
 
                 if attachments:
@@ -1659,7 +1791,7 @@ class CreateBillView(APIView):
                     bill_date = bill_date, 
                     due_date = due_date,
                     memo = memo,
-                    is_paid = is_paid,
+                    payment_status = payment_status,
                     total_amount=total_amount,
                     attachments=attachments_url,
                     created_date=timezone.now(),
@@ -1715,8 +1847,7 @@ class CreateBillView(APIView):
                 # Update the invoice's total amount after processing all items
                 # invoice.total_amount = total_amount
                 bill_payment = create_bill_transaction(vendor=vendor, products=transaction_products,
-                                                       total_amount=total_amount, user=request.user,
-                                                       is_paid=is_paid)
+                                                       total_amount=total_amount, user=request.user)
                 bill.save()
 
             audit_log_entry = audit_log(user=request.user,
@@ -1748,7 +1879,7 @@ class ListBillsView(APIView):
             return Response({"detail": "Invalid or expired token."}, status=status.HTTP_401_UNAUTHORIZED)
 
         bills = Bill.objects.filter(is_active=True).values("id",
-            "bill_number", "vendor__business_name", "vendor__email",  "total_amount", "bill_date", "due_date", "is_paid"
+            "bill_number", "vendor__business_name", "vendor__email",  "total_amount", "bill_date", "due_date", "payment_status"
         )
         bill_list = list(bills)  # Convert queryset to list of dicts
         return Response(bill_list, status=status.HTTP_200_OK)
@@ -1780,7 +1911,7 @@ class RetrieveBillView(APIView):
                 "bill_date": bill.bill_date,
                 "due_date": bill.due_date,
                 "total_amount": bill.total_amount,
-                "is_paid": bill.is_paid,
+                "payment_status": bill.payment_status,
                 "attachments": bill.attachments,
                 "items": list(items)
             }
@@ -1798,28 +1929,143 @@ class BillPaidView(APIView):
             return NewUser.objects.get(id=user_id)
         except (jwt.ExpiredSignatureError, jwt.DecodeError, NewUser.DoesNotExist):
             return None
-        
-    def patch(self, request, id):
+
+    def patch(self, request):
+        """
+        Mark one or more bills as fully or partially paid, handle tracking, 
+        and record the payment details for the vendor.
+        """
         try:
             user = self.get_user_from_token(request)
-            is_paid = request.data.get('is_paid')
-            if is_paid:
-                bill = Bill.objects.get(id=id, is_active=True)
-                if bill.is_paid:
-                    return Response("bill is already paid", status=status.HTTP_200_OK)
-                vendor = Vendor.objects.get(vendor_id=bill.vendor.vendor_id)
-                bill.is_paid = True
-                bill_transaction = process_bill_payment(vendor=vendor, payment_amount=bill.total_amount, user=user)
-                bill.save()
-                log.audit.success(f"Bill payment done | {bill.id} | {user}")
-                return Response("bill is paid", status=status.HTTP_200_OK)
-            else:
-                log.app.error(f"Bill payment already done | {bill.id} | {user}")
-                return Response("No changes done", status=status.HTTP_200_OK)
+            if not user:
+                return Response({"detail": "Invalid user token."}, status=status.HTTP_401_UNAUTHORIZED)
 
-        except bill.DoesNotExist:
-            log.trace.trace(f"bill does not exist {traceback.format_exc()}")
-            return Response({"detail": "bill not found."}, status=status.HTTP_404_NOT_FOUND)
+            # Get the request data
+            bills_data = request.data.get("bills", [])  # List of bill IDs and amounts
+            payment_amount = Decimal(request.data.get("payment_amount"))
+            vendor_id = request.data.get("vendor_id")
+            debit_account_id = request.data.get("debit_account_id")  # Bank/Cash account ID
+
+            if payment_amount <= 0:
+                return Response({"detail": "Invalid payment amount."}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Retrieve vendor, payable tracking, and debit account
+            vendor = Vendor.objects.get(vendor_id=vendor_id, is_active=True)
+            payable = PayableTracking.objects.get(vendor=vendor)
+            accounts_payable = Account.objects.get(account_type='accounts_payable')
+            debit_account = Account.objects.get(id=debit_account_id, is_active=True)
+
+            total_allocated = Decimal("0.00")
+            transactions_to_log = []
+
+            # Loop through each bill and allocate payment
+            for bill_data in bills_data:
+                bill_id = bill_data.get("bill_id")
+                allocated_amount = Decimal(bill_data.get("allocated_amount", 0))
+
+                if allocated_amount <= 0:
+                    continue  # Skip invalid or zero allocations
+
+                bill = Bill.objects.get(id=bill_id, vendor=vendor, is_active=True)
+
+                # Calculate payment for the bill
+                if bill.unpaid_amount == 0:
+                    return Response({"Details": "Bill is already paid."}, status=status.HTTP_400_BAD_REQUEST)
+                payment_for_bill = min(allocated_amount, bill.unpaid_amount)
+
+                # Update bill
+                bill.paid_amount += payment_for_bill
+                bill.unpaid_amount -= payment_for_bill
+                bill.payment_status = "paid" if bill.unpaid_amount == 0 else "partially_paid"
+                bill.save()
+
+                # Add to total allocated
+                total_allocated += payment_for_bill
+
+                # Record bill transaction
+                transactions_to_log.append({
+                    "description": f"Payment for bill {bill.id}",
+                    "credit_amount": payment_for_bill,
+                    "debit_amount": 0,
+                })
+
+            if total_allocated > payment_amount:
+                return Response({"detail": "Payment amount is insufficient for allocation."}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Update payable tracking
+            payable.payable_amount -= Decimal(total_allocated)
+            accounts_payable.balance -= Decimal(total_allocated)
+
+            # Handle overpayment
+            overpayment = Decimal(payment_amount) - Decimal(total_allocated)
+            if overpayment > 0:
+                payable.prepayment_amount += Decimal(overpayment)
+
+            # Create a transaction for the payment
+            with db_transaction.atomic():
+                transaction = Transaction.objects.create(
+                    reference_number=f"PAY-{uuid.uuid4().hex[:6].upper()}",
+                    transaction_type="expense",
+                    date=datetime.now(),
+                    description=f"Payment made to vendor {vendor.business_name}",
+                    tax_amount=0,
+                    is_active=True,
+                    created_by=user,
+                )
+
+                # Log each transaction line
+                for line in transactions_to_log:
+                    TransactionLine.objects.create(
+                        transaction=transaction,
+                        account=Account.objects.get(account_type="accounts_payable"),
+                        description=line["description"],
+                        credit_amount=line["credit_amount"],
+                        debit_amount=line["debit_amount"],
+                    )
+
+                # Log debit from bank/cash account
+                TransactionLine.objects.create(
+                    transaction=transaction,
+                    account=debit_account,
+                    description=f"Payment debited for vendor {vendor.business_name}",
+                    credit_amount=0,
+                    debit_amount=payment_amount,
+                )
+
+                # Save payment details in VendorPaymentDetail
+                VendorPaymentDetails.objects.create(
+                    vendor=vendor,
+                    transaction=transaction,
+                    payment_method=request.data.get("payment_method", ""),
+                    transaction_reference_id=request.data.get("transaction_id", ""),
+                    bank_name=request.data.get("bank_name", ""),
+                    cheque_number=request.data.get("cheque_number", ""),
+                    payment_date=datetime.now(),
+                    payment_amount=payment_amount,
+                )
+                debit_account.balance -= Decimal(payment_amount)
+                payable.save()
+
+                debit_account.save()
+                accounts_payable.save()
+
+            # Log and return response
+            log.audit.success(f"Payments applied for vendor {vendor.business_name} | User: {user}")
+            return Response({"detail": f"Payment processed successfully for vendor {vendor.business_name}."}, status=status.HTTP_200_OK)
+
+        except Vendor.DoesNotExist:
+            log.app.error("Vendor Not found")
+            return Response({"detail": "Vendor not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Bill.DoesNotExist:
+            log.app.error("Bill Not found")
+            return Response({"detail": "One or more bills not found."}, status=status.HTTP_404_NOT_FOUND)
+        except PayableTracking.DoesNotExist:
+            log.app.error("Payable tracking Not found")
+            return Response({"detail": "Payable tracking not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Account.DoesNotExist:
+            log.app.error("Account Not found")
+            return Response({"detail": "Specified debit account not found."}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
-            log.trace.trace(f"Error retrieving bill {traceback.format_exc()}")
-            return Response({"detail": "Error retrieving bill."}, status=status.HTTP_400_BAD_REQUEST)
+            log.app.error(f"Error processing payment: {str(e)}")
+            log.trace.trace(f"Error processing bill payments {traceback.format_exc()}")
+            return Response({"detail": "Error processing payment."}, status=status.HTTP_400_BAD_REQUEST)
