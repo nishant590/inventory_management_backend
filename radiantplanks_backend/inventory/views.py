@@ -1125,7 +1125,7 @@ class ListInvoicesView(APIView):
             return Response({"detail": "Invalid or expired token."}, status=status.HTTP_401_UNAUTHORIZED)
 
         invoices = Invoice.objects.filter(is_active=True).values(
-            "id", "customer__business_name", "customer_email", "customer__mobile_number", "total_amount", "bill_date", "due_date", "payment_status"
+            "id", "customer__business_name", "customer__customer_id",  "customer_email", "customer__mobile_number", "total_amount", "unpaid_amount", "bill_date", "due_date", "payment_status"
         )
         invoice_list = list(invoices)  # Convert queryset to list of dicts
         return Response(invoice_list, status=status.HTTP_200_OK)
@@ -1879,7 +1879,7 @@ class ListBillsView(APIView):
             return Response({"detail": "Invalid or expired token."}, status=status.HTTP_401_UNAUTHORIZED)
 
         bills = Bill.objects.filter(is_active=True).values("id",
-            "bill_number", "vendor__business_name", "vendor__email",  "total_amount", "bill_date", "due_date", "payment_status"
+            "bill_number", "vendor__business_name", "vendor__vendor_id", "vendor__email", "total_amount", "unpaid_amount", "bill_date", "due_date", "payment_status"
         )
         bill_list = list(bills)  # Convert queryset to list of dicts
         return Response(bill_list, status=status.HTTP_200_OK)
