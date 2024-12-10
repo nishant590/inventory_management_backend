@@ -11,6 +11,7 @@ import pandas as pd
 from radiantplanks_backend.logging import log
 import traceback
 from authentication.views import audit_log
+from datetime import datetime 
 
 
 class AddAccountAPI(APIView):
@@ -219,74 +220,79 @@ class AccountPayablesView(APIView):
 
 
 class BalanceSheetView(APIView):
-    """
-    API view to generate Balance Sheet without serializers
-    """
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        """
-        Generate Balance Sheet
-        """
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+
+        try:
+            if start_date:
+                start_date = datetime.strptime(start_date, "%Y-%m-%d")
+            if end_date:
+                end_date = datetime.strptime(end_date, "%Y-%m-%d")
+        except ValueError:
+            return JsonResponse({'error': 'Invalid date format. Use YYYY-MM-DD.'}, status=400)
+
+        def calculate_balance(account):
+            transaction_lines = TransactionLine.objects.filter(
+                account=account,
+                transaction__date__gte=start_date if start_date else None,
+                transaction__date__lte=end_date if end_date else None,
+                transaction__is_active=True
+            )
+            debit_sum = transaction_lines.aggregate(Sum('debit_amount'))['debit_amount__sum'] or Decimal('0.00')
+            credit_sum = transaction_lines.aggregate(Sum('credit_amount'))['credit_amount__sum'] or Decimal('0.00')
+            return debit_sum - credit_sum
+
         # Asset Accounts
-        asset_types = [
-            'cash', 'bank', 'accounts_receivable', 
-            'inventory', 'fixed_assets', 'other_current_assets'
-        ]
-        
+        asset_types = ['cash', 'bank', 'accounts_receivable', 'inventory', 'fixed_assets', 'other_current_assets']
         assets = []
         total_assets = Decimal('0.00')
-        
+
         for asset_type in asset_types:
             accounts = Account.objects.filter(account_type=asset_type, is_active=True)
             for account in accounts:
-                asset_info = {
+                balance = calculate_balance(account)
+                assets.append({
                     'name': account.name,
                     'code': account.code,
-                    'balance': float(account.balance)
-                }
-                assets.append(asset_info)
-                total_assets += account.balance
-        
+                    'balance': float(balance)
+                })
+                total_assets += balance
+
         # Liability Accounts
-        liability_types = [
-            'accounts_payable', 'credit_card', 
-            'current_liabilities', 'long_term_liabilities'
-        ]
-        
+        liability_types = ['accounts_payable', 'credit_card', 'current_liabilities', 'long_term_liabilities']
         liabilities = []
         total_liabilities = Decimal('0.00')
-        
+
         for liability_type in liability_types:
             accounts = Account.objects.filter(account_type=liability_type, is_active=True)
             for account in accounts:
-                liability_info = {
+                balance = calculate_balance(account)
+                liabilities.append({
                     'name': account.name,
                     'code': account.code,
-                    'balance': float(account.balance)
-                }
-                liabilities.append(liability_info)
-                total_liabilities += account.balance
-        
+                    'balance': float(balance)
+                })
+                total_liabilities += balance
+
         # Equity Accounts
-        equity_types = [
-            'owner_equity', 'retained_earnings'
-        ]
-        
+        equity_types = ['owner_equity', 'retained_earnings']
         equity = []
         total_equity = Decimal('0.00')
-        
+
         for equity_type in equity_types:
             accounts = Account.objects.filter(account_type=equity_type, is_active=True)
             for account in accounts:
-                equity_info = {
+                balance = calculate_balance(account)
+                equity.append({
                     'name': account.name,
                     'code': account.code,
-                    'balance': float(account.balance)
-                }
-                equity.append(equity_info)
-                total_equity += account.balance
-        
+                    'balance': float(balance)
+                })
+                total_equity += balance
+
         return JsonResponse({
             'assets': assets,
             'liabilities': liabilities,
@@ -308,6 +314,7 @@ class ProfitLossStatementView(APIView):
         Generate Profit and Loss Statement
         """
         # Optional date range filtering
+        customer_id = request.GET.get('customer_id')
         start_date = request.GET.get('start_date')
         end_date = request.GET.get('end_date')
 

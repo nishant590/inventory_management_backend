@@ -44,3 +44,4 @@ Thumbs.db
 EOL
 *.js
 *.css
+backups/

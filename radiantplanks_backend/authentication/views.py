@@ -12,6 +12,10 @@ from rest_framework_simplejwt.tokens import RefreshToken
 import requests
 from radiantplanks_backend.logging import log
 import traceback
+import os
+from datetime import datetime
+from authentication.db_backup import manage_backups
+
 
 def get_geolocation_based_on_ip(ip):
     url = f"https://ipinfo.io/{ip}/json"
@@ -193,3 +197,14 @@ class UserDetailView(APIView):
         serializer.save()
 
         return Response(serializer.data)
+
+
+class CreateBackup(APIView):
+    """API endpoint to trigger database backup."""
+    def get(self, request):
+        """API endpoint to handle database backups and cleanup."""
+        result = manage_backups()
+        if result["status"] == "success":
+            return Response({"message": "Backup completed successfully", "file": result["file"]})
+        else:
+            return Response({"message": "Backup process failed", "error": result["message"]}, status=500)

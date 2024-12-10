@@ -227,7 +227,7 @@ def process_invoice_payment(customer, payment_amount, user):
         # Create a new transaction
         transaction = Transaction.objects.create(
             reference_number=f"PAY-{uuid.uuid4().hex[:6].upper()}",
-            transaction_type='income',
+            transaction_type='journal',
             date=datetime.now(),
             description=f"Payment received from {customer.business_name}",
             created_by=user  # Assuming you have request context
@@ -323,7 +323,7 @@ def create_bill_transaction(vendor, products, total_amount, user, is_paid):
         # Create a new transaction
         transaction = Transaction.objects.create(
             reference_number=f"BILL-{uuid.uuid4().hex[:6].upper()}",
-            transaction_type='expense',
+            transaction_type='journal',
             date=datetime.now(),
             description=f"Bill for vendor {vendor.business_name}",
             created_by=user
@@ -1215,7 +1215,10 @@ class InvoicePaidView(APIView):
 
             # Retrieve customer, receivable tracking, and credit account
             customer = Customer.objects.get(customer_id=customer_id, is_active=True)
-            receivable = ReceivableTracking.objects.get(customer=customer)
+            receivable, created = ReceivableTracking.objects.get_or_create(
+                customer=customer,
+                defaults={'receivable_amount': Decimal("0.00"), 'advance_payment': Decimal("0.00")}
+            )
             accounts_recievable = Account.objects.get(account_type='accounts_receivable')
             credit_account = Account.objects.get(id=credit_account_id, is_active=True)
 
@@ -1263,7 +1266,7 @@ class InvoicePaidView(APIView):
             # Handle overpayment
             overpayment = Decimal(payment_amount) - Decimal(total_allocated)
             if overpayment > 0:
-                receivable.prepayment_amount += Decimal(overpayment)
+                receivable.advance_payment += Decimal(overpayment)
 
             # Create a transaction for the payment
             with db_transaction.atomic():
@@ -1951,7 +1954,8 @@ class BillPaidView(APIView):
 
             # Retrieve vendor, payable tracking, and debit account
             vendor = Vendor.objects.get(vendor_id=vendor_id, is_active=True)
-            payable = PayableTracking.objects.get(vendor=vendor)
+            payable, created = PayableTracking.objects.get_or_create(vendor=vendor,
+                    defaults={'payable_amount': Decimal("0.00"), 'advance_payment': Decimal("0.00")})
             accounts_payable = Account.objects.get(account_type='accounts_payable')
             debit_account = Account.objects.get(id=debit_account_id, is_active=True)
 
@@ -1999,7 +2003,7 @@ class BillPaidView(APIView):
             # Handle overpayment
             overpayment = Decimal(payment_amount) - Decimal(total_allocated)
             if overpayment > 0:
-                payable.prepayment_amount += Decimal(overpayment)
+                payable.advance_payment += Decimal(overpayment)
 
             # Create a transaction for the payment
             with db_transaction.atomic():
@@ -2069,3 +2073,4 @@ class BillPaidView(APIView):
             log.app.error(f"Error processing payment: {str(e)}")
             log.trace.trace(f"Error processing bill payments {traceback.format_exc()}")
             return Response({"detail": "Error processing payment."}, status=status.HTTP_400_BAD_REQUEST)
+
