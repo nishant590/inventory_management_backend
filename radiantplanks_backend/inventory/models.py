@@ -98,8 +98,18 @@ class Invoice(models.Model):
     customer_email = models.CharField(max_length=100, null=True)
     customer_email_cc = models.CharField(max_length=255, null=True, blank=True)  # For CC/BCC
     customer_email_bcc = models.CharField(max_length=255, null=True, blank=True)
-    billing_address = models.TextField(null=True, blank=True)  # Billing address
-    shipping_address = models.TextField(null=True, blank=True)  # shipping address
+    billing_address_street_1 = models.CharField(max_length=255, null=True, blank=True)  # Billing address
+    billing_address_street_2 = models.CharField(max_length=255, null=True, blank=True)  # Billing address
+    billing_address_city = models.CharField(max_length=100, null=True, blank=True)  # Billing address
+    billing_address_state = models.CharField(max_length=100, null=True, blank=True)  # Billing address
+    billing_address_postal_code = models.CharField(max_length=20, null=True, blank=True)  # Billing address
+    billing_address_country = models.CharField(max_length=100, null=True, blank=True)  # Billing address
+    shipping_address_street_1 = models.CharField(max_length=255, null=True, blank=True)  # shipping address
+    shipping_address_street_2 = models.CharField(max_length=255, null=True, blank=True)  # shipping address
+    shipping_address_city = models.CharField(max_length=100, null=True, blank=True)  # shipping address
+    shipping_address_state = models.CharField(max_length=100, null=True, blank=True)  # shipping address
+    shipping_address_postal_code = models.CharField(max_length=20, null=True, blank=True)  # shipping address
+    shipping_address_country = models.CharField(max_length=100, null=True, blank=True)  # shipping address
     tags = models.CharField(max_length=255, null=True, blank=True)  # Tags field
     terms = models.TextField(null=True, blank=True)  # Terms field
     bill_date = models.DateTimeField(default=timezone.now)  # Redundant, could be removed
@@ -187,7 +197,12 @@ class Bill(models.Model):
         ("paid", "Paid"),
     )
     vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE)
-    mailing_address = models.TextField(null=True, blank=True)
+    mailing_address_street_1 = models.CharField(max_length=255, null=True, blank=True)  # Billing address
+    mailing_address_street_2 = models.CharField(max_length=255, null=True, blank=True)  # Billing address
+    mailing_address_city = models.CharField(max_length=100, null=True, blank=True)  # Billing address
+    mailing_address_state = models.CharField(max_length=100, null=True, blank=True)  # Billing address
+    mailing_address_postal_code = models.CharField(max_length=20, null=True, blank=True)  # Billing address
+    mailing_address_country = models.CharField(max_length=100, null=True, blank=True)  # Billing address
     bill_number = models.CharField(max_length=255, null=True, blank=True)
     tags = models.CharField(max_length=255, null=True, blank=True)
     terms = models.TextField(null=True, blank=True)

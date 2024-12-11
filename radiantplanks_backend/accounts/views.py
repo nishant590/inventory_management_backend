@@ -5,6 +5,7 @@ from .models import Account, ReceivableTracking, Transaction, TransactionLine, P
 from django.core.exceptions import ValidationError
 from django.db.models import Sum, Q
 from django.http import JsonResponse
+from customers.models import Customer, Vendor
 from rest_framework.permissions import IsAuthenticated
 from decimal import Decimal
 import pandas as pd
@@ -314,7 +315,7 @@ class ProfitLossStatementView(APIView):
         Generate Profit and Loss Statement
         """
         # Optional date range filtering
-        customer_id = request.GET.get('customer_id')
+        # customer_id = request.GET.get('customer_id')
         start_date = request.GET.get('start_date')
         end_date = request.GET.get('end_date')
 
@@ -390,6 +391,109 @@ class ProfitLossStatementView(APIView):
         net_profit = total_income - total_expenses
         
         return JsonResponse({
+            'income': income,
+            'expenses': expenses,
+            'total_income': float(total_income),
+            'total_expenses': float(total_expenses),
+            'net_profit': float(net_profit)
+        })
+    
+
+class ProfitLossStatementCustomerView(APIView):
+    """
+    API view to generate Profit and Loss Statement for a specific customer
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """
+        Generate Profit and Loss Statement
+        """
+        # Optional filtering by customer and date range
+        customer_id = request.GET.get('customer_id')
+        start_date = request.GET.get('start_date')
+        end_date = request.GET.get('end_date')
+
+        if not customer_id:
+            return JsonResponse({'error': 'customer_id is required'}, status=400)
+        
+        try:
+            customer = Customer.objects.get(pk=customer_id)
+        except Customer.DoesNotExist:
+            return JsonResponse({'error': 'Customer not found'}, status=404)
+
+        # Income Accounts
+        income_types = ['sales_income', 'service_income', 'other_income']
+        income = []
+        total_income = Decimal('0.00')
+
+        for income_type in income_types:
+            accounts = Account.objects.filter(account_type=income_type, is_active=True)
+            for account in accounts:
+                # Calculate total income from transaction lines for this account and customer
+                income_query = TransactionLine.objects.filter(
+                    account=account,
+                    transaction__transaction_type='income',
+                    transaction__payment_details__customer=customer 
+                )
+
+                if start_date:
+                    income_query = income_query.filter(transaction__date__gte=start_date)
+                if end_date:
+                    income_query = income_query.filter(transaction__date__lte=end_date)
+
+                income_amount = income_query.aggregate(total=Sum('credit_amount'))['total'] or Decimal('0.00')
+
+                income_info = {
+                    'name': account.name,
+                    'code': account.code,
+                    'amount': float(income_amount)
+                }
+                income.append(income_info)
+                total_income += income_amount
+
+        # Expense Accounts
+        expense_types = [
+            'cost_of_goods_sold', 'operating_expenses', 
+            'payroll_expenses', 'marketing_expenses', 
+            'administrative_expenses', 'other_expenses'
+        ]
+        expenses = []
+        total_expenses = Decimal('0.00')
+
+        for expense_type in expense_types:
+            accounts = Account.objects.filter(account_type=expense_type, is_active=True)
+            for account in accounts:
+                # Calculate total expenses from transaction lines for this account and customer
+                expense_query = TransactionLine.objects.filter(
+                    account=account,
+                    transaction__transaction_type='expense',
+                    transaction__payment_details__customer=customer 
+                )
+
+                if start_date:
+                    expense_query = expense_query.filter(transaction__date__gte=start_date)
+                if end_date:
+                    expense_query = expense_query.filter(transaction__date__lte=end_date)
+
+                expense_amount = expense_query.aggregate(total=Sum('debit_amount'))['total'] or Decimal('0.00')
+
+                expense_info = {
+                    'name': account.name,
+                    'code': account.code,
+                    'amount': float(expense_amount)
+                }
+                expenses.append(expense_info)
+                total_expenses += expense_amount
+
+        # Calculate Net Profit
+        net_profit = total_income - total_expenses
+
+        return JsonResponse({
+            'customer': {
+                'id': customer.id,
+                'name': customer.name
+            },
             'income': income,
             'expenses': expenses,
             'total_income': float(total_income),

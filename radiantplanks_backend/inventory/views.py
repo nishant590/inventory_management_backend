@@ -199,6 +199,16 @@ def create_invoice_transaction(customer, products, total_amount, user):
         cogs_account.balance += Decimal(inv_total_cost)
         sales_revenue_account.balance += Decimal(total_amount)
         
+        CustomerPaymentDetails.objects.create(
+            customer=customer,
+            transaction=transaction,
+            payment_method="Cost of goods sold",
+            transaction_reference_id="",
+            bank_name="",
+            cheque_number="",
+            payment_date=datetime.now(),
+            payment_amount=inv_total_cost,
+        )
         inventory_account.save()
         receivable_account.save()
         cogs_account.save()
@@ -362,6 +372,16 @@ def create_bill_transaction(vendor, products, total_amount, user, is_paid):
         payable.payable_amount += Decimal(total_amount)
         payable.save()
         # Update account balances
+        VendorPaymentDetails.objects.create(
+            vendor=vendor,
+            transaction=transaction,
+            payment_method="inventory",
+            transaction_reference_id="",
+            bank_name="",
+            cheque_number="",
+            payment_date=datetime.now(),
+            payment_amount=total_amount,
+        )
         inventory_account.balance += Decimal(inv_total_cost)
         if not is_paid:
             payable_account.balance += Decimal(total_amount)
@@ -596,9 +616,14 @@ class ProductCreateView(APIView):
             return None
 
     def calculate_area(self, length, width, no_of_tiles):
-        area = length * width * no_of_tiles
-        area = round(area, 2)
-        return area
+        # Calculate area in square inches
+        area_in_sq_inches = length * width * no_of_tiles
+        # Convert to square feet
+        area_in_sq_feet = area_in_sq_inches / 144
+        # Round to 2 decimal places
+        area_in_sq_feet = round(area_in_sq_feet, 2)
+        return area_in_sq_feet
+
 
     def calculate_stock_quantity(self, quantity=None, unit=None):
         if unit == "box":
@@ -759,9 +784,14 @@ class ProductUpdateView(APIView):
             return None
 
     def calculate_area(self, length, width, no_of_tiles):
-        area = length * width * no_of_tiles
-        area = round(area, 2)
-        return area
+        # Calculate area in square inches
+        area_in_sq_inches = length * width * no_of_tiles
+        # Convert to square feet
+        area_in_sq_feet = area_in_sq_inches / 144
+        # Round to 2 decimal places
+        area_in_sq_feet = round(area_in_sq_feet, 2)
+        return area_in_sq_feet
+
 
     def calculate_stock_quantity(self, quantity=None, unit=None):
         if unit == "box":
@@ -990,8 +1020,18 @@ class CreateInvoiceView(APIView):
                 customer_email = data.get("customer_email")
                 customer_email_cc = data.get("customer_email_cc")
                 customer_email_bcc = data.get("customer_email_bcc")
-                billing_address = data.get("billing_address")
-                shipping_address = data.get("shipping_address")
+                billing_address_street_1 = data.get("billing_address_street_1","")
+                billing_address_street_2 = data.get("billing_address_street_2","")
+                billing_address_city = data.get("billing_address_city","")
+                billing_address_state = data.get("billing_address_state","")
+                billing_address_postal_code = data.get("billing_address_postal_code","")
+                billing_address_country = data.get("billing_address_country","")
+                shipping_address_street_1 = data.get("shipping_address_street_1","")
+                shipping_address_street_2 = data.get("shipping_address_street_2","")
+                shipping_address_city = data.get("shipping_address_city","")
+                shipping_address_state = data.get("shipping_address_state","")
+                shipping_address_postal_code = data.get("shipping_address_postal_code","")
+                shipping_address_country = data.get("shipping_address_country","")
                 tags = data.get("tags")
                 terms = data.get("terms")
                 bill_date = data.get("bill_date")
@@ -1027,8 +1067,18 @@ class CreateInvoiceView(APIView):
                     customer_email = customer_email,
                     customer_email_cc = customer_email_cc,
                     customer_email_bcc = customer_email_bcc,
-                    billing_address = billing_address,
-                    shipping_address = shipping_address,
+                    billing_address_street_1 = billing_address_street_1,
+                    billing_address_street_2 = billing_address_street_2,
+                    billing_address_city = billing_address_city,
+                    billing_address_state = billing_address_state,
+                    billing_address_postal_code = billing_address_postal_code,
+                    billing_address_country = billing_address_country,
+                    shipping_address_street_1 = shipping_address_street_1,
+                    shipping_address_street_2 = shipping_address_street_2,
+                    shipping_address_city = shipping_address_city,
+                    shipping_address_state = shipping_address_state,
+                    shipping_address_postal_code = shipping_address_postal_code,
+                    shipping_address_country = shipping_address_country,
                     tags = tags,
                     terms = terms,
                     bill_date = bill_date, 
@@ -1155,8 +1205,18 @@ class RetrieveInvoiceView(APIView):
                 "customer_email": invoice.customer_email,
                 "customer_email_cc": invoice.customer_email_cc,
                 "customer_email_bcc": invoice.customer_email_bcc,
-                "billing_address": invoice.billing_address,
-                "shipping_address": invoice.shipping_address,
+                "billing_address_street_1" : invoice.billing_address_street_1,
+                "billing_address_street_2" : invoice.billing_address_street_2,
+                "billing_address_city" : invoice.billing_address_city,
+                "billing_address_state" : invoice.billing_address_state,
+                "billing_address_postal_code" : invoice.billing_address_postal_code,
+                "billing_address_country" : invoice.billing_address_country,
+                "shipping_address_street_1" : invoice.shipping_address_street_1,
+                "shipping_address_street_2" : invoice.shipping_address_street_2,
+                "shipping_address_city" : invoice.shipping_address_city,
+                "shipping_address_state" : invoice.shipping_address_state,
+                "shipping_address_postal_code" : invoice.shipping_address_postal_code,
+                "shipping_address_country" : invoice.shipping_address_country,
                 "tags": invoice.tags,
                 "terms": invoice.terms,
                 "bill_date": invoice.bill_date,
@@ -1760,7 +1820,12 @@ class CreateBillView(APIView):
                 data = request.data
 
                 bill_number = data.get("bill_number")
-                mailing_address = data.get("mailing_address")
+                mailing_address_street_1 = data.get("mailing_address_street_1","")
+                mailing_address_street_2 = data.get("mailing_address_street_2","")
+                mailing_address_city = data.get("mailing_address_city","")
+                mailing_address_state = data.get("mailing_address_state","")
+                mailing_address_postal_code = data.get("mailing_address_postal_code","")
+                mailing_address_country = data.get("mailing_address_country","")
                 # shipping_address = data.get("shipping_address")
                 tags = data.get("tags")
                 terms = data.get("terms")
@@ -1787,7 +1852,12 @@ class CreateBillView(APIView):
                 # Create temporary invoice
                 bill = Bill.objects.create(
                     vendor=vendor,
-                    mailing_address = mailing_address,
+                    mailing_address_street_1 = mailing_address_street_1,
+                    mailing_address_street_2 = mailing_address_street_2,
+                    mailing_address_city = mailing_address_city,
+                    mailing_address_state = mailing_address_state,
+                    mailing_address_postal_code = mailing_address_postal_code,
+                    mailing_address_country = mailing_address_country,
                     tags = tags,
                     terms = terms,
                     bill_number = bill_number,
@@ -1911,6 +1981,12 @@ class RetrieveBillView(APIView):
             bill_data = {
                 "bill_number": bill.bill_number,
                 "vendor": bill.vendor.business_name,
+                "mailing_address_street_1": bill.mailing_address_street_1,
+                "mailing_address_street_2": bill.mailing_address_street_2,
+                "mailing_address_city": bill.mailing_address_city,
+                "mailing_address_state": bill.mailing_address_state,
+                "mailing_address_postal_code": bill.mailing_address_postal_code,
+                "mailing_address_country": bill.mailing_address_country,
                 "bill_date": bill.bill_date,
                 "due_date": bill.due_date,
                 "total_amount": bill.total_amount,

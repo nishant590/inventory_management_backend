@@ -15,6 +15,7 @@ import traceback
 import os
 from datetime import datetime
 from authentication.db_backup import manage_backups
+from django.http import FileResponse
 
 
 def get_geolocation_based_on_ip(ip):
@@ -201,10 +202,37 @@ class UserDetailView(APIView):
 
 class CreateBackup(APIView):
     """API endpoint to trigger database backup."""
+
     def get(self, request):
-        """API endpoint to handle database backups and cleanup."""
-        result = manage_backups()
+        """API endpoint to handle database backups and provide a downloadable file."""
+        is_human_readable = request.GET.get("is_human_readable", "false").lower() == "true"
+        is_compressed = request.GET.get("is_compressed", "true").lower() == "true"
+        
+        # Trigger the backup process
+        result = manage_backups(
+            database_type="sqlite",  # You can modify this for other databases
+            compress=is_compressed,
+            human_readable=is_human_readable,
+        )
+
         if result["status"] == "success":
-            return Response({"message": "Backup completed successfully", "file": result["file"]})
+            backup_file_path = result["file"]
+
+            if os.path.exists(backup_file_path):
+                # Serve the file for download
+                response = FileResponse(
+                    open(backup_file_path, "rb"),
+                    as_attachment=True,
+                    filename=os.path.basename(backup_file_path)
+                )
+                return response
+            else:
+                return Response(
+                    {"message": "Backup file not found after creation."},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
         else:
-            return Response({"message": "Backup process failed", "error": result["message"]}, status=500)
+            return Response(
+                {"message": "Backup process failed", "error": result["message"]},
+                status=status.HTTP_400_BAD_REQUEST
+            )

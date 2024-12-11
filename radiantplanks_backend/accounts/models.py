@@ -117,7 +117,7 @@ class Transaction(models.Model):
 class CustomerPaymentDetails(models.Model):
     transaction = models.OneToOneField(Transaction, on_delete=models.CASCADE, related_name="payment_details")
     customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name="customer_payment_details")
-    payment_method = models.CharField(max_length=50)  # e.g., 'cash', 'bank_transfer', 'cheque'
+    payment_method = models.CharField(max_length=50, null=True, blank=True)  # e.g., 'cash', 'bank_transfer', 'cheque'
     transaction_reference_id = models.CharField(max_length=100, null=True, blank=True)  # Bank transaction ID
     bank_name = models.CharField(max_length=100, null=True, blank=True)
     cheque_number = models.CharField(max_length=50, null=True, blank=True)
@@ -131,7 +131,7 @@ class CustomerPaymentDetails(models.Model):
 class VendorPaymentDetails(models.Model):
     transaction = models.OneToOneField(Transaction, on_delete=models.CASCADE, related_name="vendor_payment_details")
     vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE, related_name="vendor_payment_details")
-    payment_method = models.CharField(max_length=50)  # e.g., 'cash', 'bank_transfer', 'cheque'
+    payment_method = models.CharField(max_length=50, null=True, blank=True)  # e.g., 'cash', 'bank_transfer', 'cheque'
     transaction_reference_id = models.CharField(max_length=100, null=True, blank=True)  # Bank
     bank_name = models.CharField(max_length=100, null=True, blank=True)
     cheque_number = models.CharField(max_length=50, null=True, blank=True)
