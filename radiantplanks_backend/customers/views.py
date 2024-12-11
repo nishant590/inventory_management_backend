@@ -6,7 +6,7 @@ from django.db import transaction
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.utils import timezone
-from .models import Customer, Address, Vendor, VendorAddress
+from .models import Customer, Address, Vendor, VendorAddress, State, City
 from radiantplanks_backend.logging import log
 import traceback 
 import jwt
@@ -586,3 +586,61 @@ class VendorRetriveView(APIView):
             log.trace.trace(f"Error : {traceback.format_exc()}")
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
+class StateAndCityView(APIView):
+    def get(self, request):
+        # Get query parameters
+        state_name = request.query_params.get('state')
+        city_name = request.query_params.get('city')
+
+        # If both state and city are provided, find specific city
+        if state_name and city_name:
+            try:
+                state = State.objects.get(name=state_name)
+                city = City.objects.get(name=city_name, state=state)
+                return Response({
+                    'state': state.name,
+                    'city': city.name
+                })
+            except (State.DoesNotExist, City.DoesNotExist):
+                return Response({
+                    'error': 'State or City not found'
+                }, status=status.HTTP_404_NOT_FOUND)
+
+        # If only state is provided, return cities in that state
+        if state_name:
+            try:
+                state = State.objects.get(name=state_name)
+                cities = state.cities.all()
+                return Response({
+                    'state': state.name,
+                    'cities': [city.name for city in cities]
+                })
+            except State.DoesNotExist:
+                return Response({
+                    'error': 'State not found'
+                }, status=status.HTTP_404_NOT_FOUND)
+
+        # If only city is provided, find states with that city
+        if city_name:
+            cities = City.objects.filter(name=city_name)
+            if cities.exists():
+                return Response({
+                    'city': city_name,
+                    'states': [city.state.name for city in cities]
+                })
+            else:
+                return Response({
+                    'error': 'City not found'
+                }, status=status.HTTP_404_NOT_FOUND)
+
+        # If no parameters, return all states and their cities
+        states = State.objects.all()
+        return Response({
+            'states': [
+                {
+                    'name': state.name,
+                    'cities': [city.name for city in state.cities.all()]
+                } for state in states
+            ]
+        })

@@ -321,7 +321,7 @@ def process_bill_payment(vendor, payment_amount, bank_account, user):
         return False
 
 
-def create_bill_transaction(vendor, products, total_amount, user, is_paid):
+def create_bill_transaction(vendor, products, total_amount, user):
     """
     Adjust inventory and create accounts payable for the bill.
     If paid, do not increase accounts payable and reduce bank balance.
@@ -383,8 +383,7 @@ def create_bill_transaction(vendor, products, total_amount, user, is_paid):
             payment_amount=total_amount,
         )
         inventory_account.balance += Decimal(inv_total_cost)
-        if not is_paid:
-            payable_account.balance += Decimal(total_amount)
+        payable_account.balance += Decimal(total_amount)
 
         inventory_account.save()
         payable_account.save()

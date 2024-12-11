@@ -79,3 +79,27 @@ class VendorAddress(models.Model):
     def __str__(self):
         return f"{self.address_type.capitalize()} Address for {self.vendor.business_name}"
 
+
+class State(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+
+    def __str__(self):
+        return self.name
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'cities': [city.name for city in self.cities.all()]
+        }
+
+class City(models.Model):
+    name = models.CharField(max_length=100)
+    state = models.ForeignKey(State, related_name='cities', on_delete=models.CASCADE)
+
+    class Meta:
+        unique_together = ('name', 'state')
+        verbose_name_plural = "Cities"
+
+    def __str__(self):
+        return f"{self.name}, {self.state.name}"
