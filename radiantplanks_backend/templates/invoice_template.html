@@ -148,7 +148,10 @@
             <div class="billto">
                <p style="margin-top: 10px;" class="h2">Bill To</p>
                <p class="textsmall2"> {{ customer.first_name }} {{ customer.last_name }} </p>
-               <p class="textsmall">{{ invoice.billing_address }}<br>
+               <p class="textsmall">{{ invoice.billing_address_street_1}}<br>
+                {{ invoice.billing_address_street_2 }}<br>
+                {{ invoice.billing_address_city }}, {{ invoice.billing_address_state }}<br>
+                {{ invoice.billing_address_postal_code }}, {{ invoice.billing_address_country }}<br>
                 {{ customer.phone }}<br>
                 {{ customer.email }}</p>
             </div>
@@ -156,9 +159,12 @@
             <div class="billto">
                 <p style="margin-top: 10px;" class="h2">Ship To</p>
                 <p class="textsmall2"> {{ customer.first_name }} {{ customer.last_name }} </p>
-                <p class="textsmall">{{ invoice.shipping_address }}<br>
-                 {{ customer.phone }}<br>
-                 {{ customer.email }}</p>
+                <p class="textsmall">{{ invoice.shipping_address_street_1}}<br>
+                    {{ invoice.shipping_address_street_2 }}<br>
+                    {{ invoice.shipping_address_city }}, {{ invoice.shipping_address_state }}<br>
+                    {{ invoice.shipping_address_postal_code }}, {{ invoice.shipping_address_country }}<br>
+                    {{ customer.phone }}<br>
+                    {{ customer.email }}</p>
              </div>
 
              <div class="billto">

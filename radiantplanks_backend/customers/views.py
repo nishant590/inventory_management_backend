@@ -25,7 +25,7 @@ class CustomerCreateView(APIView):
 
         # Basic validation
         errors = {}
-        required_fields = ['first_name', 'last_name', 'email', 'phone', 'addresses']
+        required_fields = ['first_name', 'last_name', 'business_name', 'email', 'phone', 'addresses']
         for field in required_fields:
             if not data.get(field):
                 errors[field] = f"{field} is required."
@@ -126,68 +126,95 @@ class BulkCustomerCreateView(APIView):
         if missing_columns:
             return Response({'error': f'Missing required columns: {missing_columns}'}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Validate data using pandas
         errors = []
+        df['row_index'] = df.index + 1  # Track row index for error reporting
+
+        # Validate required fields
+        missing_data = df[required_columns].isnull()
+        for col in required_columns:
+            if missing_data[col].any():
+                errors.extend(
+                    [{'row': row_index, 'errors': {col: f'{col} is required.'}} for row_index in df[missing_data[col]]['row_index']]
+                )
+
+        # Validate email format
+        def validate_email_pandas(email):
+            try:
+                validate_email(email)
+                return None
+            except ValidationError:
+                return 'Invalid email format.'
+
+        df['email_error'] = df['email'].apply(validate_email_pandas)
+        errors.extend(
+            [{'row': row.row_index, 'errors': {'email': row.email_error}} for row in df[df['email_error'].notnull()].itertuples()]
+        )
+
+        # Validate phone number length
+        df['phone_error'] = df['phone'].apply(lambda x: 'Phone number must be at least 10 characters long.' if len(str(x)) < 10 else None)
+        errors.extend(
+            [{'row': row.row_index, 'errors': {'phone': row.phone_error}} for row in df[df['phone_error'].notnull()].itertuples()]
+        )
+
+        # Validate address type
+        valid_address_types = ['Billing', 'Shipping', 'Billing and Shipping']
+        df['address_type_error'] = df['address_type'].apply(lambda x: "Address type must be 'Billing', 'Shipping', or 'Billing and Shipping'." if x not in valid_address_types else None)
+        errors.extend(
+            [{'row': row.row_index, 'errors': {'address_type': row.address_type_error}} for row in df[df['address_type_error'].notnull()].itertuples()]
+        )
+
+        # Filter valid rows
+        invalid_rows = df[df[['email_error', 'phone_error', 'address_type_error']].notnull().any(axis=1)]
+        valid_rows = df[~df.index.isin(invalid_rows.index)]
+        df[['bcc_email', 'cc_email']].replace("nan", "") 
+
         successful_creates = 0
 
         try:
             with transaction.atomic():
-                for index, row in df.iterrows():
-                    row_errors = {}
+                # Bulk create customers and addresses
+                customers_to_create = []
+                addresses_to_create = []
 
-                    # Validate required fields
-                    for col in required_columns:
-                        if pd.isna(row[col]):
-                            row_errors[col] = f'{col} is required.'
-
-                    # Validate email format
-                    try:
-                        validate_email(row['email'])
-                    except ValidationError:
-                        row_errors['email'] = 'Invalid email format.'
-
-                    # Validate phone length
-                    if len(str(row['phone'])) < 10:
-                        row_errors['phone'] = 'Phone number must be at least 10 characters long.'
-
-                    # Validate address type
-                    if row['address_type'] not in ['Billing', 'Shipping', 'Billing and Shipping']:
-                        row_errors['address_type'] = "Address type must be 'Billing', 'Shipping', or 'Billing and Shipping'."
-
-                    if row_errors:
-                        errors.append({'row': index + 1, 'errors': row_errors})
-                        continue
-
-                    # Create customer and address
-                    customer = Customer.objects.create(
-                        first_name=row['first_name'],
-                        middle_name=row.get('middle_name', ''),
-                        last_name=row['last_name'],
-                        business_name=row.get('business_name', f"{row['first_name']} {row['last_name']}"),
-                        company=row.get('company', ''),
-                        email=row['email'],
-                        cc_email=row.get('cc_email', ''),
-                        bcc_email=row.get('bcc_email', ''),
-                        phone=row['phone'],
-                        mobile_number=row.get('mobile_number', ''),
+                for row in valid_rows.itertuples():
+                    customer = Customer(
+                        first_name=row.first_name,
+                        middle_name=row.middle_name if 'middle_name' in valid_rows.columns else '',
+                        last_name=row.last_name,
+                        business_name=row.business_name if 'business_name' in valid_rows.columns else f"{row.first_name} {row.last_name}",
+                        company=row.company if 'company' in valid_rows.columns else '',
+                        email=row.email,
+                        cc_email=row.cc_email if 'cc_email' in valid_rows.columns else '',
+                        bcc_email=row.bcc_email if 'bcc_email' in valid_rows.columns else '',
+                        phone=row.phone,
+                        mobile_number=row.mobile_number if 'mobile_number' in valid_rows.columns else '',
                         created_by=request.user,
                         created_date=timezone.now(),
                         updated_by=request.user,
                         updated_date=timezone.now(),
                         is_active=True
                     )
+                    customers_to_create.append(customer)
 
-                    Address.objects.create(
+                Customer.objects.bulk_create(customers_to_create)
+
+                for customer, row in zip(customers_to_create, valid_rows.itertuples()):
+                    address = Address(
                         customer=customer,
-                        address_type=row['address_type'],
-                        street_add_1=row['street_add_1'],
-                        street_add_2=row['street_add_2'],
-                        city=row['city'],
-                        state=row['state'],
-                        postal_code=row['postal_code'],
-                        country=row['country']
+                        address_type=row.address_type,
+                        street_add_1=row.street_add_1,
+                        street_add_2=row.street_add_2,
+                        city=row.city,
+                        state=row.state,
+                        postal_code=row.postal_code,
+                        country=row.country
                     )
+                    addresses_to_create.append(address)
 
-                    successful_creates += 1
+                Address.objects.bulk_create(addresses_to_create)
+
+                successful_creates = len(customers_to_create)
 
             audit_log(user=request.user, action="Bulk customer import", ip_add=request.META.get('REMOTE_ADDR'))
 
@@ -275,6 +302,7 @@ class CustomerDetailView(APIView):
         except Exception as e:
             log.trace.trace(f"Error : {traceback.format_exc()}")
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 class CustomerEditView(APIView):
     permission_classes = [IsAuthenticated]
@@ -586,6 +614,137 @@ class VendorRetriveView(APIView):
             log.trace.trace(f"Error : {traceback.format_exc()}")
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
+class BulkVendorCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser]
+
+    def post(self, request):
+        file = request.FILES.get('file')
+        if not file:
+            return Response({'error': 'No file provided'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Determine file type (CSV or Excel)
+        try:
+            if file.name.endswith('.csv'):
+                df = pd.read_csv(file)
+            elif file.name.endswith(('.xls', '.xlsx')):
+                df = pd.read_excel(file)
+            else:
+                return Response({'error': 'Unsupported file format. Use CSV or Excel.'}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({'error': f'Error reading file: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Expected columns
+        required_columns = ['first_name', 'last_name', 'email', 'phone', 'address_type', 'street_add_1', 'street_add_2', 'city', 'state', 'postal_code', 'country']
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        if missing_columns:
+            return Response({'error': f'Missing required columns: {missing_columns}'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validation logic (same as `BulkCustomerCreateView`)
+
+        # Filter valid rows
+        errors = []
+        df['row_index'] = df.index + 1  # Track row index for error reporting
+
+        # Validate required fields
+        missing_data = df[required_columns].isnull()
+        for col in required_columns:
+            if missing_data[col].any():
+                errors.extend(
+                    [{'row': row_index, 'errors': {col: f'{col} is required.'}} for row_index in df[missing_data[col]]['row_index']]
+                )
+
+        # Validate email format
+        def validate_email_pandas(email):
+            try:
+                validate_email(email)
+                return None
+            except ValidationError:
+                return 'Invalid email format.'
+
+        df['email_error'] = df['email'].apply(validate_email_pandas)
+        errors.extend(
+            [{'row': row.row_index, 'errors': {'email': row.email_error}} for row in df[df['email_error'].notnull()].itertuples()]
+        )
+
+        # Validate phone number length
+        df['phone_error'] = df['phone'].apply(lambda x: 'Phone number must be at least 10 characters long.' if len(str(x)) < 10 else None)
+        errors.extend(
+            [{'row': row.row_index, 'errors': {'phone': row.phone_error}} for row in df[df['phone_error'].notnull()].itertuples()]
+        )
+
+        # Validate address type
+        valid_address_types = ['Billing', 'Shipping', 'Billing and Shipping']
+        df['address_type_error'] = df['address_type'].apply(lambda x: "Address type must be 'Billing', 'Shipping', or 'Billing and Shipping'." if x not in valid_address_types else None)
+        errors.extend(
+            [{'row': row.row_index, 'errors': {'address_type': row.address_type_error}} for row in df[df['address_type_error'].notnull()].itertuples()]
+        )
+
+        # Filter valid rows
+        invalid_rows = df[df[['email_error', 'phone_error', 'address_type_error']].notnull().any(axis=1)]
+        valid_rows = df[~df.index.isin(invalid_rows.index)]
+
+        successful_creates = 0
+
+        try:
+            with transaction.atomic():
+                # Bulk create vendors and vendor addresses
+                vendors_to_create = []
+                addresses_to_create = []
+
+                for row in valid_rows.itertuples():
+                    vendor = Vendor(
+                        first_name=row.first_name,
+                        middle_name=row.middle_name if 'middle_name' in valid_rows.columns else '',
+                        last_name=row.last_name,
+                        business_name=row.business_name if 'business_name' in valid_rows.columns else f"{row.first_name} {row.last_name}",
+                        company=row.company if 'company' in valid_rows.columns else '',
+                        email=row.email,
+                        cc_email=row.cc_email if 'cc_email' in valid_rows.columns else '',
+                        bcc_email=row.bcc_email if 'bcc_email' in valid_rows.columns else '',
+                        phone=row.phone,
+                        mobile_number=row.mobile_number if 'mobile_number' in valid_rows.columns else '',
+                        created_by=request.user,
+                        created_date=timezone.now(),
+                        updated_by=request.user,
+                        updated_date=timezone.now(),
+                        is_active=True
+                    )
+                    vendors_to_create.append(vendor)
+
+                Vendor.objects.bulk_create(vendors_to_create)
+
+                for vendor, row in zip(vendors_to_create, valid_rows.itertuples()):
+                    address = VendorAddress(
+                        vendor=vendor,
+                        address_type=row.address_type,
+                        street_add_1=row.street_add_1,
+                        street_add_2=row.street_add_2,
+                        city=row.city,
+                        state=row.state,
+                        postal_code=row.postal_code,
+                        country=row.country
+                    )
+                    addresses_to_create.append(address)
+
+                VendorAddress.objects.bulk_create(addresses_to_create)
+
+                successful_creates = len(vendors_to_create)
+
+            audit_log(user=request.user, action="Bulk vendor import", ip_add=request.META.get('REMOTE_ADDR'))
+
+            return Response({
+                'message': 'Bulk vendor import completed.',
+                'successful_creates': successful_creates,
+                'errors': errors
+            }, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            traceback_msg = traceback.format_exc()
+            log.trace.trace(f"Error during bulk import: {traceback_msg}")
+            return Response({'error': f'Error during bulk import: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
 
 class StateAndCityView(APIView):
     def get(self, request):

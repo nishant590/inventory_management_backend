@@ -125,7 +125,7 @@ def add_inventory_transaction(product_name, quantity, unit_cost, inventory_accou
         return False
     
 
-def create_invoice_transaction(customer, products, total_amount, user):
+def create_invoice_transaction(customer, products, total_amount, tax_amount, user):
     """
     Adjust inventory, create account receivable, and log transactions for cost of goods sold and sales revenue.
     """
@@ -134,90 +134,103 @@ def create_invoice_transaction(customer, products, total_amount, user):
         inventory_account = Account.objects.get(account_type='inventory')  # Inventory account
         receivable_account = Account.objects.get(account_type='accounts_receivable')  # Accounts Receivable account
         cogs_account = Account.objects.get(account_type='cost_of_goods_sold')  # Cost of Goods Sold account
-        sales_revenue_account = Account.objects.get(account_type='sales_revenue')  # Sales Revenue account
-
+        sales_revenue_account = Account.objects.get(account_type='sales_income')  # Sales Revenue account
+        tax_amount_account = Account.objects.get(account_type='tax_payable')
+        untaxed_amount = total_amount - tax_amount
         # Create a new transaction
-        transaction = Transaction.objects.create(
-            reference_number=f"INV-{uuid.uuid4().hex[:6].upper()}",
-            transaction_type='income',
-            date=datetime.now(),
-            description=f"Invoice for customer {customer.business_name}",
-            created_by=user
-        )
-        
-        inv_total_cost = 0
-
-        # Adjust inventory and log revenue and COGS
-        for product in products:
-            product_name = product.get("product_name")
-            quantity = Decimal(product.get("quantity"))
-            unit_cost = Decimal(product.get("unit_cost"))  # Unit cost for inventory valuation
-            unit_price = Decimal(product.get("unit_price"))  # Selling price per unit
-            total_cost = quantity * unit_cost
-            total_revenue = quantity * unit_price
-            inv_total_cost += total_cost
-
-            # Reduce inventory (credit inventory account)
-            TransactionLine.objects.create(
-                transaction=transaction,
-                account=inventory_account,
-                description=f"Inventory adjustment for {product_name}",
-                debit_amount=0,
-                credit_amount=total_cost,
+        with db_transaction.atomic():
+            transaction = Transaction.objects.create(
+                reference_number=f"INV-{uuid.uuid4().hex[:6].upper()}",
+                transaction_type='income',
+                date=datetime.now(),
+                description=f"Invoice for customer {customer.business_name}",
+                created_by=user
             )
+            
+            inv_total_cost = 0
 
-            # Log cost of goods sold (debit COGS)
+            # Adjust inventory and log revenue and COGS
+            for product in products:
+                product_name = product.get("product_name")
+                quantity = Decimal(product.get("quantity"))
+                unit_cost = Decimal(product.get("unit_cost"))  # Unit cost for inventory valuation
+                unit_price = Decimal(product.get("unit_price"))  # Selling price per unit
+                total_cost = quantity * unit_cost
+                total_revenue = quantity * unit_price
+                inv_total_cost += total_cost
+
+                # Reduce inventory (credit inventory account)
+                TransactionLine.objects.create(
+                    transaction=transaction,
+                    account=inventory_account,
+                    description=f"Inventory adjustment for {product_name}",
+                    debit_amount=0,
+                    credit_amount=total_cost,
+                )
+
+                # Log cost of goods sold (debit COGS)
+                TransactionLine.objects.create(
+                    transaction=transaction,
+                    account=cogs_account,
+                    description=f"Cost of goods sold for {product_name}",
+                    debit_amount=total_cost,
+                    credit_amount=0,
+                )
+
+                # Log sales revenue (credit revenue account)
+                TransactionLine.objects.create(
+                    transaction=transaction,
+                    account=sales_revenue_account,
+                    description=f"Sales revenue for {product_name}",
+                    debit_amount=0,
+                    credit_amount=total_revenue,
+                )
+
+            if tax_amount>0:
+                # Log tax revenue (credit tax account)
+                tax_amount_account += tax_amount
+                TransactionLine.objects.create(
+                    transaction=transaction,
+                    account=Account.objects.get(account_type='tax_payable'),
+                    description=f"Tax Payable for invoice to {customer.business_name}",
+                    debit_amount=0,
+                    credit_amount=tax_amount,
+                )
+
+            # Increase accounts receivable (debit accounts receivable)
             TransactionLine.objects.create(
                 transaction=transaction,
-                account=cogs_account,
-                description=f"Cost of goods sold for {product_name}",
-                debit_amount=total_cost,
+                account=receivable_account,
+                description=f"Account receivable for invoice to {customer.business_name}",
+                debit_amount=total_amount,
                 credit_amount=0,
             )
 
-            # Log sales revenue (credit revenue account)
-            TransactionLine.objects.create(
+            # Update account balances
+            inventory_account.balance -= Decimal(inv_total_cost)
+            receivable_account.balance += Decimal(total_amount)
+            cogs_account.balance += Decimal(inv_total_cost)
+            sales_revenue_account.balance += Decimal(total_amount)
+            
+            CustomerPaymentDetails.objects.create(
+                customer=customer,
                 transaction=transaction,
-                account=sales_revenue_account,
-                description=f"Sales revenue for {product_name}",
-                debit_amount=0,
-                credit_amount=total_revenue,
+                payment_method="Cost of goods sold",
+                transaction_reference_id="",
+                bank_name="",
+                cheque_number="",
+                payment_date=datetime.now(),
+                payment_amount=inv_total_cost,
             )
+            inventory_account.save()
+            receivable_account.save()
+            cogs_account.save()
+            sales_revenue_account.save()
 
-        # Increase accounts receivable (debit accounts receivable)
-        TransactionLine.objects.create(
-            transaction=transaction,
-            account=receivable_account,
-            description=f"Account receivable for invoice to {customer.business_name}",
-            debit_amount=total_amount,
-            credit_amount=0,
-        )
-
-        # Update account balances
-        inventory_account.balance -= Decimal(inv_total_cost)
-        receivable_account.balance += Decimal(total_amount)
-        cogs_account.balance += Decimal(inv_total_cost)
-        sales_revenue_account.balance += Decimal(total_amount)
-        
-        CustomerPaymentDetails.objects.create(
-            customer=customer,
-            transaction=transaction,
-            payment_method="Cost of goods sold",
-            transaction_reference_id="",
-            bank_name="",
-            cheque_number="",
-            payment_date=datetime.now(),
-            payment_amount=inv_total_cost,
-        )
-        inventory_account.save()
-        receivable_account.save()
-        cogs_account.save()
-        sales_revenue_account.save()
-
-        # Log receivable tracking
-        receivable, created = ReceivableTracking.objects.get_or_create(customer=customer)
-        receivable.receivable_amount += Decimal(total_amount)
-        receivable.save()
+            # Log receivable tracking
+            receivable, created = ReceivableTracking.objects.get_or_create(customer=customer)
+            receivable.receivable_amount += Decimal(total_amount)
+            receivable.save()
 
         log.app.info("Invoice Transaction completed successfully")
         return True
@@ -1123,7 +1136,8 @@ class CreateInvoiceView(APIView):
                     product.stock_quantity -= quantity_in_tiles
                     transaction_products.append({'quantity': quantity_in_tiles, 
                                                   "product_name": product.product_name,
-                                                  "unit_price": product.purchase_price})
+                                                  "unit_price": unit_price,
+                                                  "unit_cost": product.purchase_price})
                     product.save()
                     line_total = unit_price * quantity_in_tiles
 
@@ -1144,7 +1158,7 @@ class CreateInvoiceView(APIView):
                 # invoice.total_amount = total_amount
                 invoice.save()
                 invoice_transactions = create_invoice_transaction(customer=customer, 
-                                    products=transaction_products, total_amount=total_amount, user=request.user)
+                                    products=transaction_products, total_amount=total_amount, tax_amount=tax_amount, user=request.user)
             audit_log_entry = audit_log(user=request.user,
                               action="Invoice created", 
                               ip_add=request.META.get('REMOTE_ADDR'), 

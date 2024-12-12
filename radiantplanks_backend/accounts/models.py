@@ -21,6 +21,7 @@ class Account(models.Model):
         
         # Liabilities
         ('accounts_payable', 'Accounts Payable'),
+        ('Tax_payable', 'Tax Payable'),
         ('credit_card', 'Credit Card'),
         ('current_liabilities', 'Current Liabilities'),
         ('long_term_liabilities', 'Long Term Liabilities'),
@@ -74,6 +75,7 @@ class Account(models.Model):
             
             # Liability Accounts
             {'name': 'Accounts Payable', 'account_type': 'accounts_payable', 'code': 'AP-001'},
+            {'name': 'Tax Payable', 'account_type': 'tax_payable', 'code': 'AP-002'},
             
             # Income Accounts
             {'name': 'Sales Revenue', 'account_type': 'sales_income', 'code': 'INC-001'},
