@@ -210,7 +210,7 @@ def create_invoice_transaction(customer, products, total_amount, tax_amount, use
             inventory_account.balance -= Decimal(inv_total_cost)
             receivable_account.balance += Decimal(total_amount)
             cogs_account.balance += Decimal(inv_total_cost)
-            sales_revenue_account.balance += Decimal(total_amount)
+            sales_revenue_account.balance += Decimal(untaxed_amount)
             
             CustomerPaymentDetails.objects.create(
                 customer=customer,
@@ -1103,6 +1103,8 @@ class CreateInvoiceView(APIView):
                     tax_amount = tax_amount, 
                     payment_status = payment_status,
                     total_amount=total_amount,
+                    paid_amount=0,
+                    unpaid_amount=total_amount,
                     attachments=attachments_url,
                     created_date=timezone.now(),
                     created_by=request.user,
@@ -1879,6 +1881,8 @@ class CreateBillView(APIView):
                     memo = memo,
                     payment_status = payment_status,
                     total_amount=total_amount,
+                    paid_amount=0,
+                    unpaid_amount=total_amount,
                     attachments=attachments_url,
                     created_date=timezone.now(),
                     created_by=request.user,
