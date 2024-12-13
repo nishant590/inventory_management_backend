@@ -1,5 +1,11 @@
 from django.urls import path
-from .views import AddAccountAPI, AccountListView, AccountReceivablesView, AccountPayablesView, BalanceSheetView
+from .views import (AddAccountAPI, 
+                    AccountListView, 
+                    AccountReceivablesView, 
+                    AccountPayablesView, 
+                    BalanceSheetView,
+                    ProfitLossStatementView,
+                    ProfitLossStatementCustomerView)
 
 urlpatterns = [
     path('accounts/create/', AddAccountAPI.as_view(), name='add_account'),
@@ -8,4 +14,6 @@ urlpatterns = [
     path('accounts-payable/', AccountPayablesView.as_view(), name='account-payables'),
     path('accounts-recievable/', AccountReceivablesView.as_view(), name='account-receivables'),
     path('balancesheet/', BalanceSheetView.as_view(), name='balancesheet'),
+    path('profitandloss/', ProfitLossStatementView.as_view(), name='profitandloss'),
+    path('profitandloss-customer/', ProfitLossStatementCustomerView.as_view(), name='profitandloss-customer'),
 ]

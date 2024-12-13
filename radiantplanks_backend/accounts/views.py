@@ -116,7 +116,7 @@ class AccountReceivablesView(APIView):
         try:
             # Fetch data from the database directly as a queryset
             receivables = ReceivableTracking.objects.values(
-                "customer__business_name", "payable_amount"
+                "customer__business_name", "receivable_amount"
             )
             
             # Convert the queryset to a pandas DataFrame
@@ -236,12 +236,18 @@ class BalanceSheetView(APIView):
             return JsonResponse({'error': 'Invalid date format. Use YYYY-MM-DD.'}, status=400)
 
         def calculate_balance(account):
-            transaction_lines = TransactionLine.objects.filter(
-                account=account,
-                transaction__date__gte=start_date if start_date else None,
-                transaction__date__lte=end_date if end_date else None,
-                transaction__is_active=True
-            )
+            if start_date and end_date:
+                transaction_lines = TransactionLine.objects.filter(
+                    account=account,
+                    transaction__date__gte=start_date,
+                    transaction__date__lte=end_date,
+                    transaction__is_active=True
+                )
+            else:
+                transaction_lines = TransactionLine.objects.filter(
+                    account=account,
+                    transaction__is_active=True
+                )
             debit_sum = transaction_lines.aggregate(Sum('debit_amount'))['debit_amount__sum'] or Decimal('0.00')
             credit_sum = transaction_lines.aggregate(Sum('credit_amount'))['credit_amount__sum'] or Decimal('0.00')
             return debit_sum - credit_sum
@@ -491,8 +497,8 @@ class ProfitLossStatementCustomerView(APIView):
 
         return JsonResponse({
             'customer': {
-                'id': customer.id,
-                'name': customer.name
+                'id': customer.customer_id,
+                'name': customer.business_name
             },
             'income': income,
             'expenses': expenses,
