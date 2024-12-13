@@ -658,7 +658,7 @@ class ProductCreateView(APIView):
         product_name = data.get("product_name")
         sku = data.get("sku")
         purchase_description = data.get("purchase_description")
-        sell_description = data.get("sell_description")
+        # sell_description = data.get("sell_description")
         barcode = data.get("barcode")
         quantity = data.get("quantity")
         unit = data.get("unit")
@@ -669,16 +669,16 @@ class ProductCreateView(APIView):
         tile_width = data.get("tile_width")
         no_of_tiles = data.get("no_of_tiles")
         purchase_price = data.get("purchase_price")
-        selling_price = data.get("selling_price")
+        # selling_price = data.get("selling_price")
         specifications = data.get("specifications")  # Expect JSON
         tags = data.get("tags")  # Comma-separated string
         inventory_account = data.get("inventory_account")
-        income_account = data.get("income_account")
+        # income_account = data.get("income_account")
 
 
-        if not product_name or not selling_price or not product_type:
-            log.app.error(f"Product type, name, and selling_price are required.")
-            return Response({"detail": "Product type, name, and selling_price are required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not product_name or not product_type:
+            log.app.error(f"Product type and name  are required.")
+            return Response({"detail": "Product type and name are required."}, status=status.HTTP_400_BAD_REQUEST)
 
         if product_image:
             extension = os.path.splitext(product_image.name)[1]  # Get the file extension
@@ -695,8 +695,8 @@ class ProductCreateView(APIView):
         if product_type == "product" and not tile_length or not tile_width or not no_of_tiles:
             return Response({"detail": "Tile length and width and number of tiles are required to calculate the area."}, status=status.HTTP_400_BAD_REQUEST)
 
-        if product_type == "product" and not inventory_account or not income_account:
-            return Response({"detail": "Inventory and Income account are required."}, status=status.HTTP_400_BAD_REQUEST)
+        if product_type == "product" and not inventory_account:
+            return Response({"detail": "Inventory account is required."}, status=status.HTTP_400_BAD_REQUEST)
         # Validate category and subcategory
         category = None
         subcategory = None
@@ -733,8 +733,7 @@ class ProductCreateView(APIView):
             sku = sku, 
             barcode = barcode, 
             category_id = category_id, 
-            purchase_description = purchase_description, 
-            sell_description = sell_description, 
+            purchase_description = purchase_description,
             stock_quantity = stock_quantity, 
             reorder_level = reorder_level, 
             batch_lot_number = batch_lot_number, 
@@ -743,8 +742,7 @@ class ProductCreateView(APIView):
             as_on_date = as_on_date,
             no_of_tiles = no_of_tiles,
             tile_area = tile_area,
-            purchase_price = purchase_price, 
-            selling_price = selling_price, 
+            purchase_price = purchase_price,
             specifications = specifications, 
             tags = tags, 
             images = logo_url, 
@@ -752,12 +750,10 @@ class ProductCreateView(APIView):
         )
 
         if product_type == "product":
-            income_account = Account.objects.get(id=income_account, is_active=True)
             inventory_account = Account.objects.get(id=inventory_account, is_active=True)
             accountmapping = ProductAccountMapping.objects.create(
                 product = product,
-                inventory_account = inventory_account,
-                income_account = income_account
+                inventory_account = inventory_account
             )
             inventory_add = add_inventory_transaction(product_name = product_name, 
                                                       quantity = stock_quantity, 
@@ -775,7 +771,6 @@ class ProductCreateView(APIView):
             "id": product.id,
             "product_name": product.product_name,
             "product_type": product.product_type,
-            "price": str(product.selling_price),
             "stock_quantity": product.stock_quantity,
             "tile_area": product.tile_area,
             "created_date": product.created_date,
@@ -856,7 +851,7 @@ class ProductUpdateView(APIView):
         product.sku = data.get("sku", product.sku)
         product.barcode = data.get("barcode", product.barcode)
         product.category_id = category_id
-        product.sell_description = data.get("sell_description", product.sell_description)
+        # product.sell_description = data.get("sell_description", product.sell_description)
         product.purchase_description = data.get("purchase_description", product.purchase_description)
         product.stock_quantity = data.get("stock_quantity", product.stock_quantity)
         product.reorder_level = data.get("reorder_level", product.reorder_level)
@@ -867,7 +862,7 @@ class ProductUpdateView(APIView):
         product.no_of_tiles = data.get("no_of_tiles", product.no_of_tiles)
         product.tile_area = tile_area
         product.purchase_price = data.get("purchase_price", product.purchase_price)
-        product.selling_price = data.get("selling_price", product.selling_price)
+        # product.selling_price = data.get("selling_price", product.selling_price)
         product.specifications = data.get("specifications", product.specifications)
         product.tags = data.get("tags", product.tags)
 
@@ -881,14 +876,13 @@ class ProductUpdateView(APIView):
 
         if product.product_type == 'product_type':
             account_mapping = ProductAccountMapping.objects.get(product=product.id)
-            income_account = data.get("income_account")
+            # income_account = data.get("income_account")
             inventory_account = data.get("inventory_account")
-            income_account = Account.objects.get(id=income_account, is_active=True)
+            # income_account = Account.objects.get(id=income_account, is_active=True)
             inventory_account = Account.objects.get(id=inventory_account, is_active=True)
             accountmapping = ProductAccountMapping.objects.create(
                 product = product,
-                inventory_account = inventory_account,
-                income_account = income_account
+                inventory_account = inventory_account
             )
             account_mapping.save()
 
@@ -939,7 +933,6 @@ class ProductRetrieveView(APIView):
             "sku": product.sku,
             "barcode": product.barcode,
             "category_id": product.category_id.id if product.category_id else None,
-            "sell_description": product.sell_description,
             "purchase_description": product.purchase_description,
             "stock_quantity": product.stock_quantity,
             "reorder_level": product.reorder_level,
@@ -950,15 +943,12 @@ class ProductRetrieveView(APIView):
             "no_of_tiles": product.no_of_tiles,
             "as_on_date": product.as_on_date,
             "purchase_price": product.purchase_price,
-            "selling_price": product.selling_price,
             "specifications": product.specifications,
             "tags": product.tags,
             "images": product.images,
             "created_date": product.created_date,
             "updated_date": product.updated_date,
             "is_active": product.is_active,
-            "income_account":product_accounts.income_account.name,
-            "income_account_id":product_accounts.income_account.id,
             "inventory_account": product_accounts.inventory_account.name,
             "inventory_account_id": product_accounts.inventory_account.id,
         }

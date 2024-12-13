@@ -43,7 +43,7 @@ class Product(models.Model):
     category_id = models.ForeignKey(Category, related_name='products', on_delete=models.CASCADE, null=True, blank=True)
     # subcategory = models.CharField(max_length=255, null=True, blank=True)  # Optional subcategory
     purchase_description = models.TextField(null=True, blank=True)
-    sell_description = models.TextField(null=True, blank=True)
+    # sell_description = models.TextField(null=True, blank=True)
 
     # Stock Details
     stock_quantity = models.PositiveIntegerField(default=0, null=True, blank=True)
@@ -57,7 +57,7 @@ class Product(models.Model):
 
     # Pricing Information
     purchase_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    selling_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    # selling_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     # tax_rate = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)  # e.g., 18.00 for 18%
     # discount = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)  # Discount percentage
 
@@ -80,7 +80,7 @@ class Product(models.Model):
 class ProductAccountMapping(models.Model):
     product = models.OneToOneField(Product, on_delete=models.CASCADE, related_name='account_mapping')
     inventory_account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name='inventory_mappings')
-    income_account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name='income_mappings')
+    # income_account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name='income_mappings')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
