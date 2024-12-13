@@ -607,7 +607,6 @@ class ProductListView(APIView):
                 "sku": product.sku,
                 "product_length": product.tile_length,
                 "product_width": product.tile_width,
-                "price": str(product.selling_price),
                 "stock_quantity": product.stock_quantity,
             }
             for product in products
