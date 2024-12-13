@@ -188,7 +188,7 @@ def create_invoice_transaction(customer, products, total_amount, tax_amount, use
 
             if tax_amount>0:
                 # Log tax revenue (credit tax account)
-                tax_amount_account += tax_amount
+                tax_amount_account.balance += Decimal(tax_amount)
                 TransactionLine.objects.create(
                     transaction=transaction,
                     account=Account.objects.get(account_type='tax_payable'),
@@ -196,6 +196,7 @@ def create_invoice_transaction(customer, products, total_amount, tax_amount, use
                     debit_amount=0,
                     credit_amount=tax_amount,
                 )
+                tax_amount_account.save()
 
             # Increase accounts receivable (debit accounts receivable)
             TransactionLine.objects.create(
