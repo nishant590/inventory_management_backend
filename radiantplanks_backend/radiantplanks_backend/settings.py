@@ -102,65 +102,6 @@ LOG_DIR = os.path.join(BASE_DIR, 'logs')
 os.makedirs(LOG_DIR, exist_ok=True)
 
 
-# Logging configuration
-# LOGGING = {
-#     'version': 1,
-#     'disable_existing_loggers': True,
-#     'formatters': {
-#         'verbose': {
-#             'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
-#             'style': '{',
-#         },
-#         'simple': {
-#             'format': '{levelname} {message}',
-#             'style': '{',
-#         },
-#     },
-#     'handlers': {
-#         'custom_file': {
-#             'level': 'DEBUG',
-#             'class': 'logging.FileHandler',
-#             'filename': os.path.join(BASE_DIR, 'logs', 'app_logs.log'),
-#             'formatter': 'verbose',
-#         },
-#         'trace_logger': {
-#             'level': 'DEBUG',
-#             'class': 'logging.FileHandler',
-#             'filename': os.path.join(BASE_DIR, 'logs', 'trace_logs.log'),
-#             'formatter': 'verbose',
-#         },
-#         'console': {
-#             'level': 'INFO',
-#             'class': 'logging.StreamHandler',
-#             'formatter': 'simple',
-#         },
-#     },
-#     'loggers': {
-#         'custom_logger': {
-#             'handlers': ['custom_file', 'console'],
-#             'level': 'INFO',
-#             'propagate': False,
-#         },
-#         'trace_logger': {
-#             'handlers': ['custom_file', 'console'],
-#             'level': 'DEBUG',
-#             'propagate': False,
-#         },
-#         'django': {
-#             'handlers': [],
-#             'level': 'CRITICAL',
-#         },
-#         'django.request': {
-#             'handlers': [],
-#             'level': 'CRITICAL',
-#         },
-#         'django.server': {
-#             'handlers': [],
-#             'level': 'CRITICAL',
-#         },
-#     },
-# }
-
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
@@ -234,4 +175,4 @@ EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS")
 EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER")
 EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD")
 DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL")
-
+PATH_TO_WFK = os.environ.get("PATH_TO_WFK")

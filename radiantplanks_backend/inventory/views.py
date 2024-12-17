@@ -41,7 +41,9 @@ from datetime import date, datetime
 from django.urls import reverse
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+import nest_asyncio
 import base64
+import io
 from django.db.models import Max
 # import logging
 from loguru import logger
@@ -49,6 +51,8 @@ from radiantplanks_backend.logging import log
 import asyncio
 from pyppeteer import launch
 from authentication.views import audit_log
+import pdfkit
+import tempfile
 # Get the default logger
 # logger = logging.getLogger('custom_logger')
 # Category Views
@@ -1550,21 +1554,21 @@ class SendInvoiceView(APIView):
                 bcc_email = []
 
             # Define PDF path
-            pdf_folder = os.path.join(settings.MEDIA_ROOT, 'pdfs')
-            os.makedirs(pdf_folder, exist_ok=True)
-            pdf_path = os.path.join(pdf_folder, f"Invoice_{invoice.id}.pdf")
+            # pdf_folder = os.path.join(settings.MEDIA_ROOT, 'pdfs')
+            # os.makedirs(pdf_folder, exist_ok=True)
+            # pdf_path = os.path.join(pdf_folder, f"Invoice_{invoice.id}.pdf")
 
             # Check if PDF already exists
-            if not os.path.exists(pdf_path):
+            
                 # Render the HTML template
-                html_string = render_to_string("invoice_template.html", context)
+            html_string = render_to_string("invoice_template.html", context)
 
-                # Generate PDF
-                generate_pdf(html_string, pdf_path)
+            # Generate PDF
+            pdf_buffer = generate_pdf_v3(html_string)
 
             # Send email with the PDF
             send_email_with_pdf(email=invoice.customer_email, 
-                                pdf_path=pdf_path, invoice_id=invoice.id,
+                                pdf_buffer=pdf_buffer, invoice_id=invoice.id,
                                 cc_email=cc_email, bcc_email=bcc_email)
             audit_log_entry = audit_log(user=request.user,
                               action="Invoice Sent", 
@@ -1581,24 +1585,94 @@ class SendInvoiceView(APIView):
             return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-def generate_pdf_sync(html_string, pdf_path):
+def generate_pdf_v3(html_string, options=None):
+    """
+    Generate a PDF from an HTML string using pdfkit and BytesIO.
+    
+    :param html_string: HTML content to convert to PDF
+    :param options: Optional dictionary of wkhtmltopdf configuration options
+    :return: Bytes object containing the PDF
+    """
+    # Default options if none provided
+    default_options = {
+        'page-size': 'A4',
+        'margin-top': '0.1in',
+        'margin-right': '0.1in',
+        'margin-bottom': '0.1in',
+        'margin-left': '0.1in',
+        'encoding': "UTF-8",
+        'no-outline': None,
+        'enable-local-file-access': ''
+    }
+    
+    # Merge default options with any user-provided options
+    if options:
+        default_options.update(options)
+    
+    try:
+        # Create a BytesIO object to store the PDF
+        pdf_buffer = io.BytesIO()
+        # path_to_wfk = r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe"
+        path_to_wfk = settings.PATH_TO_WFK
 
-    async def generate_pdf_v2(html_string, pdf_path):
-        browser = await launch(headless=True,
-                                executablePath='C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
-                                args=['--no-sandbox', '--disable-setuid-sandbox'])
+        config = pdfkit.configuration(wkhtmltopdf = path_to_wfk)
+        # Attempt to generate PDF directly to BytesIO
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_pdf:
+            temp_pdf_path = temp_pdf.name
+        
+        # Generate PDF to temporary file
+        pdfkit.from_string(
+            html_string, 
+            temp_pdf_path, 
+            options=default_options, 
+            configuration=config
+        )
+        
+        # Read the PDF into a BytesIO object
+        with open(temp_pdf_path, 'rb') as pdf_file:
+            pdf_buffer = io.BytesIO(pdf_file.read())
+        
+        # Clean up the temporary file
+        import os
+        os.unlink(temp_pdf_path)
+        
+        # Reset the buffer position to the beginning
+        pdf_buffer.seek(0)
+        
+        print("PDF generated successfully in memory")
+        return pdf_buffer
+    
+    except OSError as e:
+        # Common error if wkhtmltopdf is not installed
+        print(f"Error generating PDF: {e}")
+        return None
+    except Exception as e:
+        print(f"Unexpected error generating PDF: {e}")
+        return None     
+
+def generate_pdf_sync(html_string, pdf_path):
+    # Apply nest_asyncio to allow nested event loops
+    nest_asyncio.apply()
+
+    async def generate_pdf(html_string, pdf_path):
+        # Launch the browser
+        browser = await launch(
+            headless=True,
+            executablePath='C:/Program Files/Google/Chrome/Application/chrome.exe',
+            args=['--no-sandbox', '--disable-setuid-sandbox']
+        )
         page = await browser.newPage()
 
-        # Set the content of the page to the HTML string
+        # Set the page content
         await page.setContent(html_string)
 
-        # Generate PDF
+        # Generate the PDF
         await page.pdf({
             'path': pdf_path,
             'format': 'A4',
             'margin': {
                 'top': '0.39in',
-                'bottom': '0.39in',
+                'bottom': '0.39in', 
                 'left': '0.39in',
                 'right': '0.39in'
             },
@@ -1606,11 +1680,10 @@ def generate_pdf_sync(html_string, pdf_path):
         })
 
         print(f"PDF generated at: {pdf_path}")
-
         await browser.close()
 
-    # Use asyncio to run the async function synchronously
-    asyncio.run(generate_pdf_v2(html_string, pdf_path))
+    # Run the async function using the current event loop
+    asyncio.get_event_loop().run_until_complete(generate_pdf(html_string, pdf_path))
 
 
 def generate_pdf(html_string, pdf_path):
@@ -1620,9 +1693,9 @@ def generate_pdf(html_string, pdf_path):
 
     chrome_options = Options()
     chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--disable-gpu")
+    # chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
+    # chrome_options.add_argument("--disable-dev-shm-usage")
 
     driver = webdriver.Chrome(options=chrome_options)
 
@@ -1653,20 +1726,21 @@ def generate_pdf(html_string, pdf_path):
     driver.quit()
 
 
-def send_email_with_pdf(email, pdf_path, invoice_id, cc_email = [],bcc_email = []):
+def send_email_with_pdf(email, pdf_buffer, invoice_id, cc_email = [],bcc_email = []):
     from django.core.mail import EmailMessage
     # html_content = render_to_string('mail_template.html')
-    with open(pdf_path, 'rb') as pdf_file:
-        email = EmailMessage(
-            subject=f"Invoice #{invoice_id}",
-            body="Please find attached your invoice.",
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            to=[email],
-            cc=cc_email,
-            bcc=bcc_email
-        )
-        # email.content_subtype = 'html'
-        email.attach(f"Invoice_{invoice_id}.pdf", pdf_file.read(), "application/pdf")
+
+    email = EmailMessage(
+        subject=f"Invoice #{invoice_id}",
+        body="Please find attached your invoice.",
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        to=[email],
+        cc=cc_email,
+        bcc=bcc_email
+    )
+    # email.content_subtype = 'html'
+    if pdf_buffer:
+        email.attach(f'Invoice_{invoice_id}.pdf', pdf_buffer.getvalue(), 'application/pdf')
         email.send()
 
 
