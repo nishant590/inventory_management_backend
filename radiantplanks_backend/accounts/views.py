@@ -506,3 +506,48 @@ class ProfitLossStatementCustomerView(APIView):
             'total_expenses': float(total_expenses),
             'net_profit': float(net_profit)
         })
+
+
+
+class AccountsReceivableAPIView(APIView):
+    """
+    Retrieve total Accounts Receivable for a specific date range
+    """
+    def get(self, request):
+        try:
+            start_date = request.GET.get('start_date')
+            end_date = request.GET.get('end_date')
+
+
+            receivable_account = Account.objects.filter(account_type='accounts_receivable')
+            receivables = TransactionLine.objects.filter(
+                transaction__date__range=[start_date, end_date],
+                account__in=receivable_account
+            ).aggregate(total_receivable=Sum('debit_amount') - Sum('credit_amount'))
+                
+            return Response({"total_receivable": receivables['total_receivable'] or 0}, status=status.HTTP_200_OK)
+        except Exception as e:
+            log.trace.trace(f"Error getting receivables {traceback.format_exc()}")
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AccountsPayableAPIView(APIView):
+    """
+    Retrieve total Accounts Payable for a specific date range
+    """
+    def get(self, request):
+        try:
+            start_date = request.GET.get('start_date')
+            end_date = request.GET.get('end_date')
+
+
+            payable_account = Account.objects.filter(account_type='accounts_payable')
+            payables = TransactionLine.objects.filter(
+                transaction__date__range=[start_date, end_date],
+                account__in=payable_account
+            ).aggregate(total_payable=Sum('credit_amount') - Sum('debit_amount'))
+
+            return Response({"total_payable": payables['total_payable'] or 0}, status=status.HTTP_200_OK)
+        except Exception as e:
+            log.trace.trace(f"Error getting payables {traceback.format_exc()}")
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
