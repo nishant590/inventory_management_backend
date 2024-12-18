@@ -2181,8 +2181,8 @@ class BillPaidView(APIView):
                         transaction=transaction,
                         account=Account.objects.get(account_type="accounts_payable"),
                         description=line["description"],
-                        credit_amount=line["credit_amount"],
-                        debit_amount=line["debit_amount"],
+                        credit_amount=line["debit_amount"],
+                        debit_amount=line["credit_amount"],
                     )
 
                 # Log debit from bank/cash account
