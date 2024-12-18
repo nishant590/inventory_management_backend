@@ -1595,14 +1595,14 @@ def generate_pdf_v3(html_string, options=None):
     """
     # Default options if none provided
     default_options = {
+        'enable-local-file-access': '',
         'page-size': 'A4',
         'margin-top': '0.1in',
         'margin-right': '0.1in',
         'margin-bottom': '0.1in',
         'margin-left': '0.1in',
         'encoding': "UTF-8",
-        'no-outline': None,
-        'enable-local-file-access': ''
+        'no-outline': None
     }
     
     # Merge default options with any user-provided options
