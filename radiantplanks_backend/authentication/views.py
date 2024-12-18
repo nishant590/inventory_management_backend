@@ -16,6 +16,10 @@ import os
 from datetime import datetime
 from authentication.db_backup import manage_backups
 from django.http import FileResponse
+import jwt
+from django.core.mail import send_mail
+from datetime import datetime, timedelta
+from jwt import ExpiredSignatureError, DecodeError
 
 
 def get_geolocation_based_on_ip(ip):
@@ -152,6 +156,68 @@ class LoginView(APIView):
         except requests.RequestException:
             pass
         return {}
+
+
+class ForgotPasswordAPIView(APIView):
+    permission_classes = [AllowAny]
+    def post(self, request, *args, **kwargs):
+        email = request.data.get('email')
+        if not email:
+            return Response({"error": "Email is required."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            user = NewUser.objects.get(email=email)
+            # Generate token
+            secret_key = settings.SECRET_KEY
+            payload = {
+                "user_id": user.id,
+                "exp": datetime.utcnow() + timedelta(hours=1),  # Token valid for 1 hour
+            }
+            reset_token = jwt.encode(payload, secret_key, algorithm="HS256")
+            
+            # Send reset email
+            reset_url = f"http://example.com/reset-password/?token={reset_token}"
+            send_mail(
+                subject="Password Reset Request",
+                message=f"Click the link to reset your password: {reset_url}",
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[user.email],
+            )
+            return Response({"message": "Password reset link has been sent to your email."}, status=status.HTTP_200_OK)
+        except NewUser.DoesNotExist:
+            return Response({"error": "User with this email does not exist."}, status=status.HTTP_404_NOT_FOUND)
+
+
+class ResetPasswordAPIView(APIView):
+    permission_classes = [AllowAny]
+    def post(self, request, *args, **kwargs):
+        token = request.data.get('token')
+        new_password = request.data.get('new_password')
+        
+        if not token or not new_password:
+            return Response({"error": "Token and new password are required."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            # Decode token
+            secret_key = settings.SECRET_KEY
+            payload = jwt.decode(token, secret_key, algorithms=["HS256"])
+            
+            # Fetch user
+            user_id = payload.get("user_id")
+            user = NewUser.objects.get(id=user_id)
+            
+            # Update password
+            user.set_password(new_password)
+            user.save()
+            log.audit.success(f"User changed password in : {user.username} | | ")
+            return Response({"message": "Password has been reset successfully."}, status=status.HTTP_200_OK)
+            
+        except ExpiredSignatureError:
+            return Response({"error": "The token has expired."}, status=status.HTTP_400_BAD_REQUEST)
+        except DecodeError:
+            return Response({"error": "Invalid token."}, status=status.HTTP_400_BAD_REQUEST)
+        except NewUser.DoesNotExist:
+            return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
 
 
 class UserListView(APIView):
