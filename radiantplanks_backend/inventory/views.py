@@ -225,7 +225,7 @@ def create_invoice_transaction(customer, products, total_amount, tax_amount, use
                 bank_name="",
                 cheque_number="",
                 payment_date=datetime.now(),
-                payment_amount=inv_total_cost,
+                payment_amount=total_cost,
             )
             inventory_account.save()
             receivable_account.save()
@@ -1355,8 +1355,8 @@ class InvoicePaidView(APIView):
                         transaction=transaction,
                         account=Account.objects.get(account_type="accounts_receivable"),
                         description=line["description"],
-                        debit_amount=line["debit_amount"],
-                        credit_amount=line["credit_amount"],
+                        debit_amount=line["credit_amount"],
+                        credit_amount=line["debit_amount"],
                     )
 
                 # Log credit to bank/cash account
@@ -1772,17 +1772,17 @@ class DownloadInvoiceView(APIView):
             }
 
             # Define PDF path
-            pdf_folder = os.path.join(settings.MEDIA_ROOT, 'pdfs')
-            os.makedirs(pdf_folder, exist_ok=True)
-            pdf_path = os.path.join(pdf_folder, f"Invoice_{invoice_id}.pdf")
+            # pdf_folder = os.path.join(settings.MEDIA_ROOT, 'pdfs')
+            # os.makedirs(pdf_folder, exist_ok=True)
+            # pdf_path = os.path.join(pdf_folder, f"Invoice_{invoice_id}.pdf")
 
-            # Check if PDF exists, generate if not
-            if not os.path.exists(pdf_path):
-                # Render the HTML template
-                html_string = render_to_string("invoice_template.html", context)
+            # # Check if PDF exists, generate if not
+            # if not os.path.exists(pdf_path):
+            #     # Render the HTML template
+            html_string = render_to_string("invoice_template.html", context)
 
-                # Generate PDF
-                generate_pdf(html_string, pdf_path)
+            
+            pdf_buffer = generate_pdf_v3(html_string)
 
             # Return the PDF as a response
             audit_log_entry = audit_log(user=request.user,
@@ -1791,7 +1791,8 @@ class DownloadInvoiceView(APIView):
                               model_name="Invoice", 
                               record_id=invoice.id)
             log.app.info(f"Invoice generated successfully | {invoice_id} | {request.user}")
-            return FileResponse(open(pdf_path, 'rb'), as_attachment=True, filename=f"Invoice_{invoice_id}.pdf")
+            pdf_buffer.seek(0)
+            return FileResponse(pdf_buffer, as_attachment=True,  filename=f"Invoice_{invoice_id}.pdf")
 
         except Invoice.DoesNotExist:
             return Response({"detail": "Invoice not found."}, status=status.HTTP_404_NOT_FOUND)
