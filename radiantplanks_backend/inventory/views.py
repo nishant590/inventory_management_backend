@@ -86,7 +86,7 @@ def add_inventory_transaction(product_name, quantity, unit_cost, inventory_accou
         with db_transaction.atomic():
             # Create a transaction record
             transaction = Transaction.objects.create(
-                reference_number=f"INV-{date.today().strftime('%Y%m%d')}-{inventory_account.id}",
+                reference_number=f"INV-{uuid.uuid4().hex[:6].upper()}-{inventory_account.id}",
                 transaction_type='journal',
                 date=date.today(),
                 description=f"Added inventory for {product_name}",
@@ -1541,6 +1541,7 @@ class SendInvoiceView(APIView):
                 "invoice": invoice,
                 "customer": invoice.customer,
                 "items": items_data,
+                "logo_url": 'media/logo/RPLogo.png'
             }
             cc_email = invoice.customer_email_cc
             if cc_email:
@@ -1553,13 +1554,8 @@ class SendInvoiceView(APIView):
             else:
                 bcc_email = []
 
-            # Define PDF path
-            # pdf_folder = os.path.join(settings.MEDIA_ROOT, 'pdfs')
-            # os.makedirs(pdf_folder, exist_ok=True)
-            # pdf_path = os.path.join(pdf_folder, f"Invoice_{invoice.id}.pdf")
+            email_html_body = render_to_string("mail_template.html", context)
 
-            # Check if PDF already exists
-            
                 # Render the HTML template
             html_string = render_to_string("invoice_template.html", context)
 
@@ -1567,7 +1563,7 @@ class SendInvoiceView(APIView):
             pdf_buffer = generate_pdf_v3(html_string)
 
             # Send email with the PDF
-            send_email_with_pdf(email=invoice.customer_email, 
+            send_email_with_pdf(email=invoice.customer_email,  email_body=email_html_body,
                                 pdf_buffer=pdf_buffer, invoice_id=invoice.id,
                                 cc_email=cc_email, bcc_email=bcc_email)
             audit_log_entry = audit_log(user=request.user,
@@ -1726,19 +1722,19 @@ def generate_pdf(html_string, pdf_path):
     driver.quit()
 
 
-def send_email_with_pdf(email, pdf_buffer, invoice_id, cc_email = [],bcc_email = []):
+def send_email_with_pdf(email, pdf_buffer, email_body, invoice_id, cc_email = [],bcc_email = []):
     from django.core.mail import EmailMessage
     # html_content = render_to_string('mail_template.html')
 
     email = EmailMessage(
         subject=f"Invoice #{invoice_id}",
-        body="Please find attached your invoice.",
+        body=email_body,
         from_email=settings.DEFAULT_FROM_EMAIL,
         to=[email],
         cc=cc_email,
         bcc=bcc_email
     )
-    # email.content_subtype = 'html'
+    email.content_subtype = 'html'
     if pdf_buffer:
         email.attach(f'Invoice_{invoice_id}.pdf', pdf_buffer.getvalue(), 'application/pdf')
         email.send()
