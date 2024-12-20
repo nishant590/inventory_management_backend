@@ -60,38 +60,42 @@ def audit_log(user, action,  ip_add, model_name=None, record_id=None, additional
 class RegisterAPIView(APIView):
     permission_classes = [AllowAny]
     def post(self, request):
-        data = request.data
-        email = data.get('email')
-        username = data.get('username')
-        password = data.get('password')
-        phone_number = data.get('phone_number')
-        user_type = data.get('user_type', 'staff')
-        
-        # Check if email or username already exists
-        if NewUser.objects.filter(email=email).exists():
-            log.app.error('Email already exists')
-            return Response({"error": "Email already in use"}, status=status.HTTP_400_BAD_REQUEST)
-        if NewUser.objects.filter(username=username).exists():
-            log.app.error('Username already exists')
-            return Response({"error": "Username already in use"}, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Create the user
-        user = NewUser.objects.create(
-            email=email,
-            username=username,
-            phone_number=phone_number,
-            user_type=user_type,
-        )
-        user.set_password(password)
-        user.save()
-        log.audit.success(f"User added successfully | {username} | ")
-        audit_log_entry = audit_log(user=request.user,
-                              action="Create User", 
-                              ip_add=request.META.get('REMOTE_ADDR'), 
-                              model_name="NewUser", 
-                              record_id=user.id)
-        return Response({"message": "User registered successfully"}, status=status.HTTP_201_CREATED)
-
+        try:
+            data = request.data
+            email = data.get('email')
+            username = data.get('username')
+            password = data.get('password')
+            phone_number = data.get('phone_number')
+            user_type = data.get('user_type', 'staff')
+            
+            # Check if email or username already exists
+            if NewUser.objects.filter(email=email).exists():
+                log.app.error('Email already exists')
+                return Response({"error": "Email already in use"}, status=status.HTTP_400_BAD_REQUEST)
+            if NewUser.objects.filter(username=username).exists():
+                log.app.error('Username already exists')
+                return Response({"error": "Username already in use"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Create the user
+            user = NewUser.objects.create(
+                email=email,
+                username=username,
+                phone_number=phone_number,
+                user_type=user_type,
+            )
+            user.set_password(password)
+            user.save()
+            log.audit.success(f"User added successfully | {username} | ")
+            audit_log_entry = audit_log(user=request.user,
+                                action="Create User", 
+                                ip_add=request.META.get('REMOTE_ADDR'), 
+                                model_name="NewUser", 
+                                record_id=user.id)
+            return Response({"message": "User registered successfully"}, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            log.app.error(f"Error in user creation {str(e)}")
+            log.trace.trace(f"Error in user creation {traceback.format_exc()}")
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class LoginView(APIView):
     permission_classes = [AllowAny]
