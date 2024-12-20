@@ -1951,6 +1951,7 @@ class CreateBillView(APIView):
                 )
 
                 # Process each item in the invoice
+                inv_total_amount = 0
                 transaction_products = []
                 for item_data in items:
                     product = Product.objects.get(id=item_data['product_id'])
@@ -1993,7 +1994,7 @@ class CreateBillView(APIView):
                     )
                     
                     # Accumulate total amount
-                    total_amount += line_total
+                    inv_total_amount += line_total
 
                 # Update the invoice's total amount after processing all items
                 # invoice.total_amount = total_amount
