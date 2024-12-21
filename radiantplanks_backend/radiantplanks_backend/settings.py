@@ -33,10 +33,8 @@ DEBUG = os.environ.get('DEBUG')
 ALLOWED_HOSTS = ["gn5918857.pythonanywhere.com",
                  "127.0.0.1", 
                  "34.211.80.138",
-                 "http://api.radiantplanks.com",
-                 "https://api.radiantplanks.com",
-                 "http://bill.radiantplanks.com",
-                 "https://bill.radiantplanks.com"]
+                 "api.radiantplanks.com",
+                 "bill.radiantplanks.com"]
 
 
 # Application definition
