@@ -180,7 +180,7 @@ class ForgotPasswordAPIView(APIView):
             reset_token = jwt.encode(payload, secret_key, algorithm="HS256")
             
             # Send reset email
-            reset_url = f"http://example.com/reset-password/?token={reset_token}"
+            reset_url = f"https://bill.radiantplanks.com/reset/?token={reset_token}"
             send_mail(
                 subject="Password Reset Request",
                 message=f"Click the link to reset your password: {reset_url}",

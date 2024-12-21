@@ -24,7 +24,9 @@ var/
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
-media/
+media/pdfs
+media/product_images
+
 
 # Virtual Environment
 inv_env/
