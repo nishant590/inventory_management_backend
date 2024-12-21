@@ -58,7 +58,7 @@ def audit_log(user, action,  ip_add, model_name=None, record_id=None, additional
 
 
 class RegisterAPIView(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
     def post(self, request):
         try:
             data = request.data
