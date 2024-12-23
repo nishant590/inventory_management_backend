@@ -15,6 +15,7 @@ from authentication.models import NewUser
 from authentication.views import audit_log
 from rest_framework.parsers import MultiPartParser
 import pandas as pd
+from accounts.models import VendorPaymentDetails
 
 class CustomerCreateView(APIView):
     permission_classes = [IsAuthenticated]
@@ -429,6 +430,7 @@ class VendorCreateView(APIView):
                     bcc_email=data.get('bcc_email', ''),
                     phone=data['phone'],
                     mobile_number=data['mobile_number'],
+                    is_contractor=data.get('is_contractor', False),
                     created_by=request.user,
                     created_date=timezone.now(),
                     updated_by=request.user,
@@ -475,6 +477,7 @@ class VendorListView(APIView):
                 "last_name": vendor.last_name,
                 "business_name": vendor.business_name,
                 "company": vendor.company,
+                "is_contractor": vendor.is_contractor,
                 "email": vendor.email,
                 "cc_email": vendor.cc_email,
                 "bcc_email": vendor.bcc_email,
@@ -520,6 +523,7 @@ class VendorEditView(APIView):
         vendor.bcc_email = data.get("bcc_email", vendor.bcc_email)
         vendor.phone = data.get("phone", vendor.phone)
         vendor.mobile_number = data.get("mobile_number", vendor.phone)
+        vendor.is_contractor = data.get("is_contractor", vendor.is_contractor)
         vendor.updated_by = request.user
         vendor.updated_date = timezone.now()
         vendor.save()
@@ -606,6 +610,7 @@ class VendorRetriveView(APIView):
                 "bcc_email": vendor.bcc_email,
                 "phone": vendor.phone,
                 "mobile_number": vendor.mobile_number,
+                "is_contractor": vendor.is_contractor,
                 "addresses": list(vendor_add)
             }
             return Response({"vendor": vendor_details}, status=status.HTTP_200_OK)
@@ -803,3 +808,40 @@ class StateAndCityView(APIView):
                 } for state in states
             ]
         })
+    
+class GetContractorTransactions(APIView):
+    def get(self, request):
+        # Fetch all payments for vendors marked as contractors
+        try:
+            vendor_name = request.GET.get('vendor_id', None)
+            contractor_payments = VendorPaymentDetails.objects.filter(
+                vendor__is_contractor=True, 
+                payment_method__in=['cash', 'cheque', 'bank_transfer']
+            ).select_related('vendor')
+
+            if vendor_name:
+                contractor_payments = contractor_payments.filter(vendor__name=vendor_name)
+
+            # Format the data as a list of dictionaries
+            if not contractor_payments.exists():
+                return Response({'message': 'No contractor payment details found.'}, status=status.HTTP_400_BAD_REQUEST)
+            data = [
+                {
+                    'payment_id': payment.id,
+                    'vendor_name': payment.vendor.business_name,
+                    'payment_method': payment.payment_method,
+                    'transaction_reference_id': payment.transaction_reference_id,
+                    'bank_name': payment.bank_name,
+                    'cheque_number': payment.cheque_number,
+                    'payment_amount': str(payment.payment_amount),
+                    'payment_date': payment.payment_date,
+                }
+                for payment in contractor_payments
+            ]
+
+            # Return the data as a JSON response
+            return Response({'contractor_payments': data}, status=status.HTTP_200_OK)
+        except Exception as e:
+            traceback_msg = traceback.format_exc()
+            log.trace.trace(f"Error fetching contractor payments: {traceback_msg}")
+            return Response({'error': f'Error fetching contractor payments: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

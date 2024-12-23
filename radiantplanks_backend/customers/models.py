@@ -60,6 +60,7 @@ class Vendor(models.Model):
     updated_by = models.ForeignKey(NewUser, on_delete=models.SET_NULL, related_name='vendor_updated_by', null=True)
     updated_date = models.DateTimeField(auto_now=True)
     is_active = models.BooleanField(default=True)
+    is_contractor = models.BooleanField(default=False)
 
     def __str__(self):
         return self.business_name

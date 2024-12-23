@@ -11,7 +11,8 @@ from .views import (CustomerCreateView,
                     CustomerDetailView,
                     StateAndCityView,
                     BulkCustomerCreateView,
-                    BulkVendorCreateView)
+                    BulkVendorCreateView,
+                    GetContractorTransactions)
 
 
 urlpatterns = [
@@ -28,4 +29,5 @@ urlpatterns = [
     path('vendors/retrive/<int:vendor_id>/', VendorRetriveView.as_view(), name='vendor-edit'),  # PUT to edit vendor
     path('vendors/<int:vendor_id>/delete/', VendorDeleteView.as_view(), name='customer-delete'),  # DELETE customer
     path('citystate/', StateAndCityView.as_view(), name='state-city'),  # DELETE customer
+    path('contractor-payments/', GetContractorTransactions.as_view(), name='contractor_payments'),
 ]
