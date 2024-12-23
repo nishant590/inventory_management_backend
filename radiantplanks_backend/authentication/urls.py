@@ -6,6 +6,7 @@ from .views import (LoginView,
                     UserDetailView, 
                     CreateBackup,
                     ResetPasswordAPIView,
+                    AuditLogListView,
                     ForgotPasswordAPIView) 
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
@@ -23,4 +24,5 @@ urlpatterns = [
     path('update_user/<int:id>/', UserDetailView.as_view(), name='update_user'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('createbackup/', CreateBackup.as_view(), name='db_backup'),
+    path('audit-logs/', AuditLogListView.as_view(), name='audit-logs'),
 ]

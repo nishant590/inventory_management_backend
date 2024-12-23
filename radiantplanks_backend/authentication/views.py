@@ -20,6 +20,7 @@ import jwt
 from django.core.mail import send_mail
 from datetime import datetime, timedelta
 from jwt import ExpiredSignatureError, DecodeError
+from django.core.paginator import Paginator
 
 
 def get_geolocation_based_on_ip(ip):
@@ -306,3 +307,62 @@ class CreateBackup(APIView):
                 {"message": "Backup process failed", "error": result["message"]},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        
+
+class AuditLogListView(APIView):
+    """
+    API endpoint to fetch audit logs without using a serializer.
+    """
+    def get(self, request):
+        query_params = request.GET
+
+        # Filtering based on query parameters
+        user_id = query_params.get('user_id')
+        action = query_params.get('action')
+        model_name = query_params.get('model_name')
+
+        logs = AuditLog.objects.all()
+
+        if user_id:
+            logs = logs.filter(user_id=user_id)
+        if action:
+            logs = logs.filter(action=action)
+        if model_name:
+            logs = logs.filter(model_name=model_name)
+
+        # Paginate the results
+        page = query_params.get('page', 1)
+        page_size = int(query_params.get('page_size', 10))
+        paginator = Paginator(logs, page_size)
+
+        try:
+            paginated_logs = paginator.page(page)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Prepare response data without using serializer
+        log_data = [
+            {
+                "id": log.id,
+                "user": log.user.username,
+                "action": log.action,
+                "model_name": log.model_name,
+                "record_id": log.record_id,
+                "timestamp": log.timestamp.isoformat(),
+                "details": log.details,
+                "activity_ip": log.activity_ip,
+                "activity_city": log.activity_city,
+                "activity_country": log.activity_country,
+            }
+            for log in paginated_logs
+        ]
+
+        return Response(
+            {
+                "count": paginator.count,
+                "num_pages": paginator.num_pages,
+                "current_page": paginated_logs.number,
+                "results": log_data,
+            },
+            status=status.HTTP_200_OK,
+        )
