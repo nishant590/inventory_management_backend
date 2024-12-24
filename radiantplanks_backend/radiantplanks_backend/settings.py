@@ -129,6 +129,13 @@ CORS_ALLOW_CREDENTIALS = True
 
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "rate-limit-locmem",
+    }
+}
+
 
 AUTH_PASSWORD_VALIDATORS = [
     {

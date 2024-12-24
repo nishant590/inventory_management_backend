@@ -21,6 +21,10 @@ from django.core.mail import send_mail
 from datetime import datetime, timedelta
 from jwt import ExpiredSignatureError, DecodeError
 from django.core.paginator import Paginator
+import sqlite3
+from openpyxl import Workbook
+from io import BytesIO
+from radiantplanks_backend.rate_limiting import rate_limit
 
 
 def get_geolocation_based_on_ip(ip):
@@ -98,9 +102,11 @@ class RegisterAPIView(APIView):
             log.trace.trace(f"Error in user creation {traceback.format_exc()}")
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
 class LoginView(APIView):
     permission_classes = [AllowAny]
 
+    @rate_limit(max_requests=5, time_window=60)
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -278,8 +284,24 @@ class CreateBackup(APIView):
         """API endpoint to handle database backups and provide a downloadable file."""
         is_human_readable = request.GET.get("is_human_readable", "false").lower() == "true"
         is_compressed = request.GET.get("is_compressed", "true").lower() == "true"
-        
-        # Trigger the backup process
+
+        if is_human_readable:
+            try:
+                # Export database tables to an Excel file in memory
+                excel_file = self.export_to_excel()
+                response = FileResponse(
+                    excel_file,
+                    as_attachment=True,
+                    filename="backup_human_readable.xlsx"
+                )
+                return response
+            except Exception as e:
+                return Response(
+                    {"message": "Failed to create human-readable backup.", "error": str(e)},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+
+        # Trigger the regular backup process (if not human-readable)
         result = manage_backups(
             database_type="sqlite",  # You can modify this for other databases
             compress=is_compressed,
@@ -307,6 +329,78 @@ class CreateBackup(APIView):
                 {"message": "Backup process failed", "error": result["message"]},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+    def export_to_excel(self):
+        """Export all database tables to an Excel file in memory."""
+        db_path = "db.sqlite3"  # Path to your SQLite database
+        excel_buffer = BytesIO()
+
+        connection = sqlite3.connect(db_path)
+        cursor = connection.cursor()
+
+        # Fetch all table names
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+        tables = cursor.fetchall()
+
+        ALLOWED_TABLES = [
+                "authentication_newpermission",
+                "authentication_newgroup",
+                "authentication_newgroup_permissions",
+                "authentication_newuser",
+                "authentication_newuser_groups",
+                "inventory_category",
+                "inventory_estimate",
+                "inventory_estimateitem",
+                "inventory_billitems",
+                "accounts_account",
+                "inventory_invoiceitem",
+                "inventory_product",
+                "inventory_tag",
+                "customers_address",
+                "expense_expense",
+                "expense_expenseitems",
+                "customers_vendoraddress",
+                "accounts_transaction",
+                "accounts_transactionline",
+                "authentication_auditlog",
+                "customers_customer",
+                "inventory_invoice",
+                "inventory_bill",
+                "accounts_receivabletracking",
+                "accounts_payabletracking",
+                "accounts_customerpaymentdetails",
+                "accounts_vendorpaymentdetails",
+                "inventory_productaccountmapping",
+                "customers_vendor",
+            ]
+        wb = Workbook()
+        for table_name, in tables:
+            if table_name in ALLOWED_TABLES:
+                ws = wb.create_sheet(title=table_name)
+                cursor.execute(f"SELECT * FROM {table_name}")
+                rows = cursor.fetchall()
+                column_names = [description[0] for description in cursor.description]
+
+                # Write column headers
+                ws.append(column_names)
+
+                # Write data rows
+                for row in rows:
+                    ws.append(row)
+
+        # Remove the default sheet created by openpyxl
+        if "Sheet" in wb.sheetnames:
+            del wb["Sheet"]
+
+        # Save the Excel file to the BytesIO buffer
+        wb.save(excel_buffer)
+        connection.close()
+
+        # Seek to the beginning of the buffer so it can be read
+        excel_buffer.seek(0)
+
+        return excel_buffer
+
         
 
 class AuditLogListView(APIView):
