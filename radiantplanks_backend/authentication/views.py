@@ -64,6 +64,8 @@ def audit_log(user, action,  ip_add, model_name=None, record_id=None, additional
 
 class RegisterAPIView(APIView):
     permission_classes = [IsAuthenticated]
+    
+    @rate_limit(max_requests=5, time_window=60)
     def post(self, request):
         try:
             data = request.data
@@ -143,7 +145,7 @@ class LoginView(APIView):
             log.audit.success(f"User logged in : {user.username} | logintime : {user.last_login}")
             audit_log_entry = audit_log(user=user,
                               action="Login", 
-                              ip_add=request.META.get('HTTP_X_FORWARDED_FOR'), 
+                              ip_add=request.META.get('HTTP_X_FORWARDED_FOR', ''), 
                               model_name="NewUser", 
                               record_id=user.id)
             return Response({
@@ -221,6 +223,11 @@ class ResetPasswordAPIView(APIView):
             user.set_password(new_password)
             user.save()
             log.audit.success(f"User changed password in : {user.username} | | ")
+            audit_log_entry = audit_log(user=user,
+                                        action="changed password",
+                                        ip_add=request.META.get('HTTP_X_FORWARDED_FOR'),
+                                        model_name="NewUser",
+                                        record_id=user.id)
             return Response({"message": "Password has been reset successfully."}, status=status.HTTP_200_OK)
             
         except ExpiredSignatureError:
