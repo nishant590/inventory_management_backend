@@ -120,7 +120,7 @@ class LoginView(APIView):
                 raise exceptions.AuthenticationFailed('User is inactive')
 
             # Capture IP and get geolocation
-            ip_address = request.META.get('REMOTE_ADDR')
+            ip_address = request.META.get('HTTP_X_FORWARDED_FOR')
             geo_data = self.get_geolocation(ip_address)
             last_login_time = user.last_login
             last_login_ip = user.last_login_ip
@@ -137,7 +137,7 @@ class LoginView(APIView):
             log.audit.success(f"User logged in : {user.username} | logintime : {user.last_login}")
             audit_log_entry = audit_log(user=user,
                               action="Login", 
-                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              ip_add=request.META.get('HTTP_X_FORWARDED_FOR'), 
                               model_name="NewUser", 
                               record_id=user.id)
             return Response({
