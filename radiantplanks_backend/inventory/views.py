@@ -129,7 +129,7 @@ def add_inventory_transaction(product_name, quantity, unit_cost, inventory_accou
         return False
     
 
-def create_invoice_transaction(customer, products, total_amount, tax_amount, user):
+def create_invoice_transaction(customer, products, total_amount, service_products, tax_amount, user):
     """
     Adjust inventory, create account receivable, and log transactions for cost of goods sold and sales revenue.
     """
@@ -154,41 +154,54 @@ def create_invoice_transaction(customer, products, total_amount, tax_amount, use
             inv_total_cost = 0
 
             # Adjust inventory and log revenue and COGS
-            for product in products:
-                product_name = product.get("product_name")
-                quantity = Decimal(product.get("quantity"))
-                unit_cost = Decimal(product.get("unit_cost"))  # Unit cost for inventory valuation
-                unit_price = Decimal(product.get("unit_price"))  # Selling price per unit
-                total_cost = quantity * unit_cost
-                total_revenue = quantity * unit_price
-                inv_total_cost += total_cost
+            if products:
+                for product in products:
+                    product_name = product.get("product_name")
+                    quantity = Decimal(product.get("quantity"))
+                    unit_cost = Decimal(product.get("unit_cost"))  # Unit cost for inventory valuation
+                    unit_price = Decimal(product.get("unit_price"))  # Selling price per unit
+                    total_cost = quantity * unit_cost
+                    total_revenue = quantity * unit_price
+                    inv_total_cost += total_cost
 
-                # Reduce inventory (credit inventory account)
-                TransactionLine.objects.create(
-                    transaction=transaction,
-                    account=inventory_account,
-                    description=f"Inventory adjustment for {product_name}",
-                    debit_amount=0,
-                    credit_amount=total_cost,
-                )
+                    # Reduce inventory (credit inventory account)
+                    TransactionLine.objects.create(
+                        transaction=transaction,
+                        account=inventory_account,
+                        description=f"Inventory adjustment for {product_name}",
+                        debit_amount=0,
+                        credit_amount=total_cost,
+                    )
 
-                # Log cost of goods sold (debit COGS)
-                TransactionLine.objects.create(
-                    transaction=transaction,
-                    account=cogs_account,
-                    description=f"Cost of goods sold for {product_name}",
-                    debit_amount=total_cost,
-                    credit_amount=0,
-                )
+                    # Log cost of goods sold (debit COGS)
+                    TransactionLine.objects.create(
+                        transaction=transaction,
+                        account=cogs_account,
+                        description=f"Cost of goods sold for {product_name}",
+                        debit_amount=total_cost,
+                        credit_amount=0,
+                    )
 
-                # Log sales revenue (credit revenue account)
-                TransactionLine.objects.create(
-                    transaction=transaction,
-                    account=sales_revenue_account,
-                    description=f"Sales revenue for {product_name}",
-                    debit_amount=0,
-                    credit_amount=total_revenue,
-                )
+                    # Log sales revenue (credit revenue account)
+                    TransactionLine.objects.create(
+                        transaction=transaction,
+                        account=sales_revenue_account,
+                        description=f"Sales revenue for {product_name}",
+                        debit_amount=0,
+                        credit_amount=total_revenue,
+                    )
+            if service_products:
+                for service_product in service_products:
+                    service_product_name = service_product.get("product_name")
+                    total_cost = Decimal(service_product.get("unit_price"))
+                    # inv_total_cost += total_cost
+                    TransactionLine.objects.create(
+                        transaction=transaction,
+                        account=sales_revenue_account,
+                        description=f"Service Sales revenue for {service_product_name}",
+                        debit_amount=0,
+                        credit_amount=total_cost,
+                    )
 
             if tax_amount>0:
                 # Log tax revenue (credit tax account)
@@ -695,8 +708,9 @@ class ProductCreateView(APIView):
         if product_type == "product" and not category_id:
             return Response({"detail": "Category is required for products."}, status=status.HTTP_400_BAD_REQUEST)
 
-        if product_type == "product" and not tile_length or not tile_width or not no_of_tiles:
-            return Response({"detail": "Tile length and width and number of tiles are required to calculate the area."}, status=status.HTTP_400_BAD_REQUEST)
+        if product_type == "product":
+            if not tile_length or not tile_width or not no_of_tiles:
+                return Response({"detail": "Tile length and width and number of tiles are required to calculate the area."}, status=status.HTTP_400_BAD_REQUEST)
 
         if product_type == "product" and not inventory_account:
             return Response({"detail": "Inventory account is required."}, status=status.HTTP_400_BAD_REQUEST)
@@ -711,7 +725,10 @@ class ProductCreateView(APIView):
                 return Response({"detail": "Category not found."}, status=status.HTTP_404_NOT_FOUND)
 
         # Calculate stock quantity for products
-        tile_area = self.calculate_area(float(tile_length), float(tile_width), int(no_of_tiles))
+        if product_type == "product":
+            tile_area = self.calculate_area(float(tile_length), float(tile_width), int(no_of_tiles))
+        else:
+            tile_area = None
 
         stock_quantity = None
         if product_type == "product":
@@ -877,7 +894,7 @@ class ProductUpdateView(APIView):
             logo_url = posixpath.join('media/product_images', logo_path)
             product.images = logo_url
 
-        if product.product_type == 'product_type':
+        if product.product_type == 'product':
             account_mapping = ProductAccountMapping.objects.get(product=product.id)
             # income_account = data.get("income_account")
             inventory_account = data.get("inventory_account")
@@ -1107,6 +1124,7 @@ class CreateInvoiceView(APIView):
 
                 # Process each item in the invoice
                 transaction_products = []
+                service_products = []
                 for item_data in items:
                     product = Product.objects.get(id=item_data['product_id'])
                     quantity = float(item_data['quantity'])
@@ -1125,17 +1143,22 @@ class CreateInvoiceView(APIView):
                         quantity_in_tiles = quantity  # Assume 'box' is the base unit
 
                     # Check if enough stock is available
-                    if product.stock_quantity < quantity_in_tiles:
-                        return Response({"detail": f"Insufficient stock for product {product.product_name}."}, status=status.HTTP_400_BAD_REQUEST)
+                    if product.product_type == 'product':
+                        if product.stock_quantity < quantity_in_tiles:
+                            return Response({"detail": f"Insufficient stock for product {product.product_name}."}, status=status.HTTP_400_BAD_REQUEST)
 
                     # Deduct stock and calculate the line total
-                    product.stock_quantity -= quantity_in_tiles
-                    transaction_products.append({'quantity': quantity_in_tiles, 
-                                                  "product_name": product.product_name,
-                                                  "unit_price": unit_price,
-                                                  "unit_cost": product.purchase_price})
-                    product.save()
-                    line_total = unit_price * quantity_in_tiles
+                        product.stock_quantity -= quantity_in_tiles
+                        transaction_products.append({'quantity': quantity_in_tiles, 
+                                                    "product_name": product.product_name,
+                                                    "unit_price": unit_price,
+                                                    "unit_cost": product.purchase_price})
+                        product.save()
+                        line_total = unit_price * quantity_in_tiles
+                    elif product.product_type == 'service':
+                        line_total = unit_price
+                        service_products.append({'product_name': product.product_name,
+                                                    'unit_price': line_total})
 
                     # Create invoice item
                     InvoiceItem.objects.create(
@@ -1154,7 +1177,11 @@ class CreateInvoiceView(APIView):
                 # invoice.total_amount = total_amount
                 invoice.save()
                 invoice_transactions = create_invoice_transaction(customer=customer, 
-                                    products=transaction_products, total_amount=total_amount, tax_amount=tax_amount, user=request.user)
+                                    products=transaction_products, 
+                                    total_amount=total_amount, 
+                                    tax_amount=tax_amount, 
+                                    service_products=service_products,
+                                    user=request.user)
             audit_log_entry = audit_log(user=request.user,
                               action="Invoice created", 
                               ip_add=request.META.get('REMOTE_ADDR'), 
@@ -1278,8 +1305,11 @@ class InvoicePaidView(APIView):
             # payment_details = request.data.get("payment_details", {}) # JSON with method, transaction ID, etc.
             customer_id = request.data.get("customer_id")
             credit_account_id = request.data.get("credit_account_id")  # Bank/Cash account ID
+            use_advanced_payment = request.data.get("use_advanced_payment", False)
 
-            if payment_amount <= 0:
+
+
+            if not use_advanced_payment and payment_amount <= 0:
                 return Response({"detail": "Invalid payment amount."}, status=status.HTTP_400_BAD_REQUEST)
 
             # Retrieve customer, receivable tracking, and credit account
@@ -1291,42 +1321,47 @@ class InvoicePaidView(APIView):
             accounts_recievable = Account.objects.get(account_type='accounts_receivable')
             credit_account = Account.objects.get(id=credit_account_id, is_active=True)
 
+            if use_advanced_payment:
+                payment_amount = receivable.advance_payment
+                receivable.advance_payment = 0
+
             total_allocated = Decimal("0.00")
             transactions_to_log = []
 
             # Loop through each invoice and allocate payment
-            for invoice_data in invoices_data:
-                invoice_id = invoice_data.get("invoice_id")
-                allocated_amount = Decimal(invoice_data.get("allocated_amount", 0))
+            with db_transaction.atomic():
+                for invoice_data in invoices_data:
+                    invoice_id = invoice_data.get("invoice_id")
+                    allocated_amount = Decimal(invoice_data.get("allocated_amount", 0))
 
-                if allocated_amount <= 0:
-                    continue  # Skip invalid or zero allocations
+                    if allocated_amount <= 0:
+                        continue  # Skip invalid or zero allocations
 
-                invoice = Invoice.objects.get(id=invoice_id, customer=customer, is_active=True)
+                    invoice = Invoice.objects.get(id=invoice_id, customer=customer, is_active=True)
 
-                # Calculate payment for the invoice
-                if invoice.unpaid_amount == 0:
-                    return Response({"Details":"Invoice are already paid"}, status=status.HTTP_400_BAD_REQUEST)
-                payment_for_invoice = min(allocated_amount, invoice.unpaid_amount)
+                    # Calculate payment for the invoice
+                    if invoice.unpaid_amount == 0:
+                        return Response({"Details":"Invoice are already paid"}, status=status.HTTP_400_BAD_REQUEST)
+                    payment_for_invoice = min(allocated_amount, invoice.unpaid_amount)
 
-                # Update invoice
-                invoice.paid_amount += payment_for_invoice
-                invoice.unpaid_amount -= payment_for_invoice
-                invoice.payment_status = "paid" if invoice.unpaid_amount == 0 else "partially_paid"
-                invoice.save()
+                    # Update invoice
+                    invoice.paid_amount += payment_for_invoice
+                    invoice.unpaid_amount -= payment_for_invoice
+                    invoice.payment_status = "paid" if invoice.unpaid_amount == 0 else "partially_paid"
+                    invoice.save()
 
-                # Add to total allocated
-                total_allocated += payment_for_invoice
+                    # Add to total allocated
+                    total_allocated += payment_for_invoice
+                    if total_allocated > payment_amount:
+                        return Response({"detail": "Payment amount is insufficient for allocation."}, status=status.HTTP_400_BAD_REQUEST)
 
-                # Record invoice transaction
-                transactions_to_log.append({
-                    "description": f"Payment for invoice {invoice.id}",
-                    "debit_amount": payment_for_invoice,
-                    "credit_amount": 0,
-                })
+                    # Record invoice transaction
+                    transactions_to_log.append({
+                        "description": f"Payment for invoice {invoice.id}",
+                        "debit_amount": payment_for_invoice,
+                        "credit_amount": 0,
+                    })
 
-            if total_allocated > payment_amount:
-                return Response({"detail": "Payment amount is insufficient for allocation."}, status=status.HTTP_400_BAD_REQUEST)
 
             # Update receivable tracking
             receivable.receivable_amount -= Decimal(total_allocated)
@@ -1408,112 +1443,111 @@ class InvoicePaidView(APIView):
 
 
 
-# class 
-# class SendInvoiceView(APIView):
-#     def post(self, request, invoice_id):
-#         try:
-#             # Fetch the invoice and related items
-#             invoice = Invoice.objects.get(id=invoice_id)
-#             items = InvoiceItem.objects.filter(invoice=invoice)
+class SendInvoiceView_v1(APIView):
+    def post(self, request, invoice_id):
+        try:
+            # Fetch the invoice and related items
+            invoice = Invoice.objects.get(id=invoice_id)
+            items = InvoiceItem.objects.filter(invoice=invoice)
 
-#             # Prepare data for template rendering
-#             items_data = [
-#                 {
-#                     "product_image": item.product.images if item.product.images else None,
-#                     "product": item.product.product_name,
-#                     "sku": item.product.sku,
-#                     "dim": f"{item.product.tile_length} x {item.product.tile_width}",
-#                     "quantity": item.quantity,
-#                     "unit_type": "box",
-#                     "unit_price": item.unit_price,
-#                     "total_price": item.unit_price * item.quantity,
-#                 }
-#                 for item in items
-#             ]
-#             context = {
-#                 "invoice": invoice,
-#                 "customer": invoice.customer,
-#                 "items": items_data
-#             }
+            # Prepare data for template rendering
+            items_data = [
+                {
+                    "product_image": item.product.images if item.product.images else None,
+                    "product": item.product.product_name,
+                    "sku": item.product.sku,
+                    "dim": f"{item.product.tile_length} x {item.product.tile_width}",
+                    "quantity": item.quantity,
+                    "unit_type": "box",
+                    "unit_price": item.unit_price,
+                    "total_price": item.unit_price * item.quantity,
+                }
+                for item in items
+            ]
+            context = {
+                "invoice": invoice,
+                "customer": invoice.customer,
+                "items": items_data
+            }
 
-#             # Render the HTML template
-#             html_string = render_to_string("invoice_template.html", context)
+            # Render the HTML template
+            html_string = render_to_string("invoice_template.html", context)
             
-#         except Invoice.DoesNotExist:
-#             return Response({"detail": "Invoice not found."}, status=status.HTTP_404_NOT_FOUND)
-#         except Exception as e:
-#             print(traceback.format_exc())
-#             return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        except Invoice.DoesNotExist:
+            return Response({"detail": "Invoice not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            print(traceback.format_exc())
+            return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-#         try:
-#             chrome_options = Options()
-#             chrome_options.add_argument("--headless")
-#             chrome_options.add_argument("--disable-gpu")
-#             chrome_options.add_argument("--no-sandbox")
-#             chrome_options.add_argument("--disable-dev-shm-usage")
+        try:
+            chrome_options = Options()
+            chrome_options.add_argument("--headless")
+            chrome_options.add_argument("--disable-gpu")
+            chrome_options.add_argument("--no-sandbox")
+            chrome_options.add_argument("--disable-dev-shm-usage")
 
-#             # Initialize webdriver
-#             driver = webdriver.Chrome(options=chrome_options)
+            # Initialize webdriver
+            driver = webdriver.Chrome(options=chrome_options)
 
-#             # Use a local HTML file instead of trying to reverse a URL
-#             # Save the HTML to a temporary file
-#             pdf_folder = os.path.join(settings.MEDIA_ROOT, 'pdfs')
-#             os.makedirs(pdf_folder, exist_ok=True)
+            # Use a local HTML file instead of trying to reverse a URL
+            # Save the HTML to a temporary file
+            pdf_folder = os.path.join(settings.MEDIA_ROOT, 'pdfs')
+            os.makedirs(pdf_folder, exist_ok=True)
             
-#             temp_html_path = os.path.join(pdf_folder, f"Invoice_{invoice.id}.html")
-#             with open(temp_html_path, 'w', encoding='utf-8') as f:
-#                 f.write(html_string)
+            temp_html_path = os.path.join(pdf_folder, f"Invoice_{invoice.id}.html")
+            with open(temp_html_path, 'w', encoding='utf-8') as f:
+                f.write(html_string)
 
-#             # Navigate to the local file
-#             driver.get(f"file://{temp_html_path}")
+            # Navigate to the local file
+            driver.get(f"file://{temp_html_path}")
 
-#             # Wait for page to load (adjust as needed)
-#             driver.implicitly_wait(10)
+            # Wait for page to load (adjust as needed)
+            driver.implicitly_wait(10)
 
-#             # Generate unique filename
-#             unique_filename = f"Invoice_{invoice.id}.pdf"
-#             pdf_path = os.path.join(pdf_folder, unique_filename)
+            # Generate unique filename
+            unique_filename = f"Invoice_{invoice.id}.pdf"
+            pdf_path = os.path.join(pdf_folder, unique_filename)
 
-#             # Print page to PDF
-#             print_options = {
-#                 'landscape': False,
-#                 'paperWidth': 8.27,  # A4 width in inches
-#                 'paperHeight': 11.69,  # A4 height in inches
-#                 'marginTop': 0.39,
-#                 'marginBottom': 0.39,
-#                 'marginLeft': 0.39,
-#                 'marginRight': 0.39,
-#             }
-#             pdf_data = driver.execute_cdp_cmd('Page.printToPDF', print_options)
+            # Print page to PDF
+            print_options = {
+                'landscape': False,
+                'paperWidth': 8.27,  # A4 width in inches
+                'paperHeight': 11.69,  # A4 height in inches
+                'marginTop': 0.39,
+                'marginBottom': 0.39,
+                'marginLeft': 0.39,
+                'marginRight': 0.39,
+            }
+            pdf_data = driver.execute_cdp_cmd('Page.printToPDF', print_options)
             
-#             # Save PDF
-#             with open(pdf_path, 'wb') as f:
-#                 f.write(base64.b64decode(pdf_data['data']))
+            # Save PDF
+            with open(pdf_path, 'wb') as f:
+                f.write(base64.b64decode(pdf_data['data']))
 
-#             # Close the driver
-#             driver.quit()
+            # Close the driver
+            driver.quit()
 
-#         except Exception as e:
-#             print(traceback.format_exc())
-#             return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        except Exception as e:
+            print(traceback.format_exc())
+            return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-#         with open(pdf_path, 'rb') as pdf_file:
-#             # Compose and send email
-#             email = EmailMessage(
-#                 subject=f"Invoice #{invoice.id}",
-#                 body="Please find attached your invoice.",
-#                 from_email=settings.DEFAULT_FROM_EMAIL,
-#                 to=[invoice.customer.email],
-#             )
-#             email.attach(f"Invoice_{invoice.id}.pdf", pdf_file.read(), "application/pdf")
+        with open(pdf_path, 'rb') as pdf_file:
+            # Compose and send email
+            email = EmailMessage(
+                subject=f"Invoice #{invoice.id}",
+                body="Please find attached your invoice.",
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                to=[invoice.customer.email],
+            )
+            email.attach(f"Invoice_{invoice.id}.pdf", pdf_file.read(), "application/pdf")
             
-#             try:
-#                 email.send()
-#                 return Response({"message": "Invoice sent successfully"}, status=status.HTTP_200_OK)
-#             except Exception as e:
-#                 # Log the error
-#                 print(f"Email sending failed: {e}")
-#                 return Response({"message": "Error in sending mail please check the customer email"}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                email.send()
+                return Response({"message": "Invoice sent successfully"}, status=status.HTTP_200_OK)
+            except Exception as e:
+                # Log the error
+                print(f"Email sending failed: {e}")
+                return Response({"message": "Error in sending mail please check the customer email"}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class SendInvoiceView(APIView):
@@ -2103,8 +2137,9 @@ class BillPaidView(APIView):
             payment_amount = Decimal(request.data.get("payment_amount"))
             vendor_id = request.data.get("vendor_id")
             debit_account_id = request.data.get("debit_account_id")  # Bank/Cash account ID
+            use_advanced_payment = request.data.get("use_advanced_payment", False)
 
-            if payment_amount <= 0:
+            if not use_advanced_payment and payment_amount <= 0:
                 return Response({"detail": "Invalid payment amount."}, status=status.HTTP_400_BAD_REQUEST)
 
             # Retrieve vendor, payable tracking, and debit account
@@ -2114,42 +2149,47 @@ class BillPaidView(APIView):
             accounts_payable = Account.objects.get(account_type='accounts_payable')
             debit_account = Account.objects.get(id=debit_account_id, is_active=True)
 
+            if use_advanced_payment:
+                payment_amount = payable.advance_payment
+                payable.advance_payment = Decimal("0.00")
+
             total_allocated = Decimal("0.00")
             transactions_to_log = []
 
             # Loop through each bill and allocate payment
-            for bill_data in bills_data:
-                bill_id = bill_data.get("bill_id")
-                allocated_amount = Decimal(bill_data.get("allocated_amount", 0))
+            with db_transaction.atomic():
+                for bill_data in bills_data:
+                    bill_id = bill_data.get("bill_id")
+                    allocated_amount = Decimal(bill_data.get("allocated_amount", 0))
 
-                if allocated_amount <= 0:
-                    continue  # Skip invalid or zero allocations
+                    if allocated_amount <= 0:
+                        continue  # Skip invalid or zero allocations
 
-                bill = Bill.objects.get(id=bill_id, vendor=vendor, is_active=True)
+                    bill = Bill.objects.get(id=bill_id, vendor=vendor, is_active=True)
 
-                # Calculate payment for the bill
-                if bill.unpaid_amount == 0:
-                    return Response({"Details": "Bill is already paid."}, status=status.HTTP_400_BAD_REQUEST)
-                payment_for_bill = min(allocated_amount, bill.unpaid_amount)
+                    # Calculate payment for the bill
+                    if bill.unpaid_amount == 0:
+                        return Response({"Details": "Bill is already paid."}, status=status.HTTP_400_BAD_REQUEST)
+                    payment_for_bill = min(allocated_amount, bill.unpaid_amount)
 
-                # Update bill
-                bill.paid_amount += payment_for_bill
-                bill.unpaid_amount -= payment_for_bill
-                bill.payment_status = "paid" if bill.unpaid_amount == 0 else "partially_paid"
-                bill.save()
+                    # Update bill
+                    bill.paid_amount += payment_for_bill
+                    bill.unpaid_amount -= payment_for_bill
+                    bill.payment_status = "paid" if bill.unpaid_amount == 0 else "partially_paid"
+                    bill.save()
 
-                # Add to total allocated
-                total_allocated += payment_for_bill
+                    # Add to total allocated
+                    total_allocated += payment_for_bill
+                    if total_allocated > payment_amount:
+                        return Response({"detail": "Payment amount is insufficient for allocation."}, status=status.HTTP_400_BAD_REQUEST)
 
-                # Record bill transaction
-                transactions_to_log.append({
-                    "description": f"Payment for bill {bill.id}",
-                    "credit_amount": payment_for_bill,
-                    "debit_amount": 0,
-                })
+                    # Record bill transaction
+                    transactions_to_log.append({
+                        "description": f"Payment for bill {bill.id}",
+                        "credit_amount": payment_for_bill,
+                        "debit_amount": 0,
+                    })
 
-            if total_allocated > payment_amount:
-                return Response({"detail": "Payment amount is insufficient for allocation."}, status=status.HTTP_400_BAD_REQUEST)
 
             # Update payable tracking
             payable.payable_amount -= Decimal(total_allocated)

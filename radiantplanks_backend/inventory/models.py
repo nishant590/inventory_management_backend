@@ -39,7 +39,7 @@ class Product(models.Model):
     product_type = models.CharField(max_length=10, choices=PRODUCT_TYPE_CHOICES, default='product')
     product_name = models.CharField(max_length=255)
     sku = models.CharField(max_length=100, unique=True, null=True, blank=True)
-    barcode = models.CharField(max_length=100, unique=True, null=True, blank=True)
+    barcode = models.CharField(max_length=100, null=True, blank=True)
     category_id = models.ForeignKey(Category, related_name='products', on_delete=models.CASCADE, null=True, blank=True)
     # subcategory = models.CharField(max_length=255, null=True, blank=True)  # Optional subcategory
     purchase_description = models.TextField(null=True, blank=True)
@@ -56,7 +56,7 @@ class Product(models.Model):
     tile_area = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
 
     # Pricing Information
-    purchase_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    purchase_price = models.DecimalField(max_digits=10, decimal_places=2, default=0, null=True, blank=True)
     # selling_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     # tax_rate = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)  # e.g., 18.00 for 18%
     # discount = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)  # Discount percentage
