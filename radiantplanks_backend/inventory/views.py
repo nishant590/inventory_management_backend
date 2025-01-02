@@ -244,7 +244,7 @@ def create_invoice_transaction(customer, invoice_id, products, total_amount, ser
             )
             InvoiceTransactionMapping.objects.create(
                 transaction=transaction,
-                invoice=invoice_id,
+                invoice_id=invoice_id,
                 is_active=True
             )
             inventory_account.save()
@@ -1509,7 +1509,7 @@ class InvoicePaidView(APIView):
                 credit_account.balance += Decimal(payment_amount)
                 InvoiceTransactionMapping.objects.create(
                     transaction=transaction,
-                    invoice=invoice_id,
+                    invoice_id=invoice_id,
                     is_active=True
                 )
 
@@ -2496,6 +2496,12 @@ class BillPaidView(APIView):
                 )
                 debit_account.balance -= Decimal(payment_amount)
                 payable.save()
+
+                BillTransactionMapping.objects.create(
+                    transaction=transaction,
+                    bill_id=bill_id,
+                    is_active=True
+                )
 
                 debit_account.save()
                 accounts_payable.save()
