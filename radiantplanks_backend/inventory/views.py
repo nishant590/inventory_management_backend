@@ -2,7 +2,9 @@ from rest_framework import generics, exceptions
 from rest_framework.permissions import IsAuthenticated
 from django.db import transaction
 from .models import (Invoice, InvoiceItem, Product, Estimate, 
-                     EstimateItem, ProductAccountMapping, Bill, BillItems)
+                     EstimateItem, ProductAccountMapping, Bill, 
+                     BillItems, InvoiceTransactionMapping,
+                     BillTransactionMapping)
 from .serializers import CategorySerializer, ProductSerializer
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
@@ -129,7 +131,7 @@ def add_inventory_transaction(product_name, quantity, unit_cost, inventory_accou
         return False
     
 
-def create_invoice_transaction(customer, products, total_amount, service_products, tax_amount, user):
+def create_invoice_transaction(customer, invoice_id, products, total_amount, service_products, tax_amount, user):
     """
     Adjust inventory, create account receivable, and log transactions for cost of goods sold and sales revenue.
     """
@@ -240,6 +242,11 @@ def create_invoice_transaction(customer, products, total_amount, service_product
                 payment_date=datetime.now(),
                 payment_amount=total_cost,
             )
+            InvoiceTransactionMapping.objects.create(
+                transaction=transaction,
+                invoice=invoice_id,
+                is_active=True
+            )
             inventory_account.save()
             receivable_account.save()
             cogs_account.save()
@@ -257,102 +264,96 @@ def create_invoice_transaction(customer, products, total_amount, service_product
         log.trace.trace(f"Error occurred: {traceback.format_exc()}")
         return False
 
-def process_invoice_payment(customer, payment_amount, user):
+
+def delete_invoice_transaction(invoice_id, user):
     """
-    Process payment for a customer and update accounts.
+    Marks all transactions and related transaction lines for an invoice as inactive,
+    and reverses account balance adjustments based on account type.
     """
     try:
-        receivable_account = Account.objects.get(account_type='accounts_receivable')  # Accounts Receivable account
-        bank_account = Account.objects.get(account_type='bank')  # Bank account
-        
-        # Create a new transaction
-        transaction = Transaction.objects.create(
-            reference_number=f"PAY-{uuid.uuid4().hex[:6].upper()}",
-            transaction_type='journal',
-            date=datetime.now(),
-            description=f"Payment received from {customer.business_name}",
-            created_by=user  # Assuming you have request context
-        )
+        # Fetch the invoice transactions
+        invoice_transactions = InvoiceTransactionMapping.objects.filter(invoice_id=invoice_id, is_active=True)
 
-        # Debit bank account (increase bank balance)
-        TransactionLine.objects.create(
-            transaction=transaction,
-            account=bank_account,
-            description=f"Payment received from {customer.business_name}",
-            debit_amount=0,
-            credit_amount=payment_amount,
-        )
+        if not invoice_transactions.exists():
+            log.app.warning(f"No active transactions found for Invoice ID: {invoice_id}")
+            return False
 
-        # Credit receivables account (decrease receivables)
-        TransactionLine.objects.create(
-            transaction=transaction,
-            account=receivable_account,
-            description=f"Clear receivable for {customer.business_name}",
-            debit_amount=payment_amount,
-            credit_amount=0,
-        )
+        with db_transaction.atomic():
+            for mapping in invoice_transactions:
+                transaction = mapping.transaction
+                # Mark transaction as inactive
+                transaction.is_active = False
+                transaction.updated_by = user
+                transaction.updated_date = datetime.now()
+                transaction.save()
 
-        # Update receivable tracking
-        receivable = ReceivableTracking.objects.get(customer=customer)
-        receivable.receivable_amount -= Decimal(payment_amount)
-        receivable_account.balance -= Decimal(payment_amount)
-        receivable.save()
-        receivable_account.save()
-        log.app.info(f"Invoice paid by {customer.business_name}")
+                # Reverse account balances for related transaction lines
+                for line in TransactionLine.objects.filter(transaction=transaction):
+                    account = line.account
+                    #Assets
+                    if account.account_type in ['inventory', 'accounts_receivable', "cash", "bank", "fixed_assets", "other_current_assets"]:
+                        # Reverse inventory account logic
+                        if line.debit_amount > 0:
+                            account.balance -= Decimal(line.debit_amount)
+                        if line.credit_amount > 0:
+                            account.balance += Decimal(line.credit_amount)
+                    #Expense
+                    elif account.account_type in ['cost_of_goods_sold', 'operating_expenses', 'payroll_expenses', 'marketing_expenses', 'administrative_expenses', 'other_expenses']:
+                        # Reverse expense account logic (COGS)
+                        if line.debit_amount > 0:
+                            account.balance -= Decimal(line.debit_amount)
+                        if line.credit_amount > 0:
+                            account.balance += Decimal(line.credit_amount)
+                    #Income
+                    elif account.account_type in ['sales_income', 'service_income','other_income']:
+                        # Reverse revenue account logic
+                        if line.debit_amount > 0:
+                            account.balance += Decimal(line.debit_amount)
+                        if line.credit_amount > 0:
+                            account.balance -= Decimal(line.credit_amount)
+                    #Liabilities
+                    elif account.account_type in ['accounts_payable', 'tax_payable', 'credit_card', 'current_liabilities', 'long_term_liabilities']:
+                        # Reverse tax account logic
+                        if line.debit_amount > 0:
+                            account.balance += Decimal(line.debit_amount)
+                        if line.credit_amount > 0:
+                            account.balance -= Decimal(line.credit_amount)
+                    #Equity
+                    elif account.account_type in ['owner_equity', 'retained_earnings']:
+                        # Reverse tax account logic
+                        if line.debit_amount > 0:
+                            account.balance += Decimal(line.debit_amount)
+                        if line.credit_amount > 0:
+                            account.balance -= Decimal(line.credit_amount)
+                    else:
+                        # Reverse tax account logic
+                        if line.debit_amount > 0:
+                            account.balance += Decimal(line.debit_amount)
+                        if line.credit_amount > 0:
+                            account.balance -= Decimal(line.credit_amount)
+
+                    # Save updated account balance
+                    account.save()
+
+                # Mark the mapping as inactive
+                mapping.is_active = False
+                mapping.save()
+
+            # Update receivable tracking
+            receivable_tracking = ReceivableTracking.objects.filter(customer=transaction.customer).first()
+            if receivable_tracking:
+                receivable_tracking.receivable_amount -= Decimal(transaction.amount)
+                receivable_tracking.save()
+
+        log.app.info(f"Invoice {invoice_id} deleted successfully.")
         return True
+
     except Exception as e:
-        log.trace.trace(f"Error occured: {traceback.format_exc()}")
+        log.trace.trace(f"Error occurred: {traceback.format_exc()}")
         return False
 
 
-def process_bill_payment(vendor, payment_amount, bank_account, user):
-    """
-    Process payment for a customer and update accounts.
-    """
-    try:
-        payable_account = Account.objects.get(account_type='accounts_payable')  # Accounts Receivable account
-        
-        # Create a new transaction
-        transaction = Transaction.objects.create(
-            reference_number=f"PAY-{uuid.uuid4().hex[:6].upper()}",
-            transaction_type='expense',
-            date=datetime.now(),
-            description=f"Payment for {vendor.business_name}",
-            created_by=user  # Assuming you have request context
-        )
-
-        # Debit bank account (increase bank balance)
-        TransactionLine.objects.create(
-            transaction=transaction,
-            account=bank_account,
-            description=f"Payment for {vendor.business_name}",
-            debit_amount=payment_amount,
-            credit_amount=0,
-        )
-
-        # Credit receivables account (decrease receivables)
-        TransactionLine.objects.create(
-            transaction=transaction,
-            account=payable_account,
-            description=f"Clear payable for {vendor.business_name}",
-            debit_amount=payment_amount,
-            credit_amount=0,
-        )
-
-        # Update receivable tracking
-        payable = PayableTracking.objects.get(vendor=vendor)
-        payable.payable_amount -= payment_amount
-        payable_account.balance -= Decimal(payment_amount)
-        payable.save()
-        payable_account.save()
-        log.app.info("Bill payment done")
-        return True
-    except Exception as e:
-        log.trace.trace(f"Error occured: {traceback.format_exc()}")
-        return False
-
-
-def create_bill_transaction(vendor, products, total_amount, user):
+def create_bill_transaction(bill_id, vendor, products, total_amount, user):
     """
     Adjust inventory and create accounts payable for the bill.
     If paid, do not increase accounts payable and reduce bank balance.
@@ -415,7 +416,11 @@ def create_bill_transaction(vendor, products, total_amount, user):
         )
         inventory_account.balance += Decimal(inv_total_cost)
         payable_account.balance += Decimal(total_amount)
-
+        BillTransactionMapping.objects.create(
+            transaction=transaction,
+            bill_id=bill_id,
+            is_active=True
+        )
         inventory_account.save()
         payable_account.save()
 
@@ -425,6 +430,93 @@ def create_bill_transaction(vendor, products, total_amount, user):
         log.trace.trace(f"Error occurred while creating bill transaction: {traceback.format_exc()}")
         return False
 
+
+def delete_bill_transaction(bill_id, user):
+    """
+    Marks all transactions and related transaction lines for an invoice as inactive,
+    and reverses account balance adjustments based on account type.
+    """
+    try:
+        # Fetch the invoice transactions
+        bill_transactions = InvoiceTransactionMapping.objects.filter(invoice_id=bill_id, is_active=True)
+
+        if not bill_transactions.exists():
+            log.app.warning(f"No active transactions found for Invoice ID: {bill_id}")
+            return False
+
+        with db_transaction.atomic():
+            for mapping in bill_transactions:
+                transaction = mapping.transaction
+                # Mark transaction as inactive
+                transaction.is_active = False
+                transaction.updated_by = user
+                transaction.updated_date = datetime.now()
+                transaction.save()
+
+                # Reverse account balances for related transaction lines
+                for line in TransactionLine.objects.filter(transaction=transaction):
+                    account = line.account
+                    #Assets
+                    if account.account_type in ['inventory', 'accounts_receivable', "cash", "bank", "fixed_assets", "other_current_assets"]:
+                        # Reverse inventory account logic
+                        if line.debit_amount > 0:
+                            account.balance -= Decimal(line.debit_amount)
+                        if line.credit_amount > 0:
+                            account.balance += Decimal(line.credit_amount)
+                    #Expense
+                    elif account.account_type in ['cost_of_goods_sold', 'operating_expenses', 'payroll_expenses', 'marketing_expenses', 'administrative_expenses', 'other_expenses']:
+                        # Reverse expense account logic (COGS)
+                        if line.debit_amount > 0:
+                            account.balance -= Decimal(line.debit_amount)
+                        if line.credit_amount > 0:
+                            account.balance += Decimal(line.credit_amount)
+                    #Income
+                    elif account.account_type in ['sales_income', 'service_income','other_income']:
+                        # Reverse revenue account logic
+                        if line.debit_amount > 0:
+                            account.balance += Decimal(line.debit_amount)
+                        if line.credit_amount > 0:
+                            account.balance -= Decimal(line.credit_amount)
+                    #Liabilities
+                    elif account.account_type in ['accounts_payable', 'tax_payable', 'credit_card', 'current_liabilities', 'long_term_liabilities']:
+                        # Reverse tax account logic
+                        if line.debit_amount > 0:
+                            account.balance += Decimal(line.debit_amount)
+                        if line.credit_amount > 0:
+                            account.balance -= Decimal(line.credit_amount)
+                    #Equity
+                    elif account.account_type in ['owner_equity', 'retained_earnings']:
+                        # Reverse tax account logic
+                        if line.debit_amount > 0:
+                            account.balance += Decimal(line.debit_amount)
+                        if line.credit_amount > 0:
+                            account.balance -= Decimal(line.credit_amount)
+                    else:
+                        # Reverse tax account logic
+                        if line.debit_amount > 0:
+                            account.balance += Decimal(line.debit_amount)
+                        if line.credit_amount > 0:
+                            account.balance -= Decimal(line.credit_amount)
+
+                    # Save updated account balance
+                    account.save()
+
+                # Mark the mapping as inactive
+                mapping.is_active = False
+                mapping.save()
+
+            # Update receivable tracking
+            receivable_tracking = ReceivableTracking.objects.filter(customer=transaction.customer).first()
+            if receivable_tracking:
+                receivable_tracking.receivable_amount -= Decimal(transaction.amount)
+                receivable_tracking.save()
+
+        log.app.info(f"Invoice {bill_id} deleted successfully.")
+        return True
+
+    except Exception as e:
+        log.trace.trace(f"Error occurred: {traceback.format_exc()}")
+        return False
 
 
 class CategoryListCreateView(APIView):
@@ -465,7 +557,7 @@ class CategoryListCreateView(APIView):
         category = Category.objects.create(name=category_name, created_by=user)
         audit_log_entry = audit_log(user=request.user,
                               action="Category Created", 
-                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              ip_add=request.META.get('HTTP_X_FORWARDED_FOR'), 
                               model_name="Category", 
                               record_id=category.id)
         log.audit.success(f"Category created successfully | {category.name} | {category.created_by}")
@@ -546,7 +638,7 @@ class CategoryUpdateView(APIView):
         category.save()
         audit_log_entry = audit_log(user=request.user,
                               action="Category Edited", 
-                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              ip_add=request.META.get('HTTP_X_FORWARDED_FOR'), 
                               model_name="Category", 
                               record_id=category.id)
         log.audit.success(f"Category updated successfully | {category.name} | {category.created_by}")
@@ -589,7 +681,7 @@ class CategoryDeleteView(APIView):
         category.save()
         audit_log_entry = audit_log(user=request.user,
                               action="Category Deleted", 
-                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              ip_add=request.META.get('HTTP_X_FORWARDED_FOR'), 
                               model_name="Category", 
                               record_id=category.id)
         log.audit.success(f"Category {category.name} deleted successfully | {category.name} | {user}")
@@ -784,7 +876,7 @@ class ProductCreateView(APIView):
         log.audit.success(f"Product added to inventory successfully | {product_name} | {user}")
         audit_log_entry = audit_log(user=request.user,
                               action="Product created", 
-                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              ip_add=request.META.get('HTTP_X_FORWARDED_FOR'), 
                               model_name="Product", 
                               record_id=product.id)
         return Response({
@@ -912,7 +1004,7 @@ class ProductUpdateView(APIView):
 
         audit_log_entry = audit_log(user=request.user,
                               action="Product Updated", 
-                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              ip_add=request.META.get('HTTP_X_FORWARDED_FOR'), 
                               model_name="Product", 
                               record_id=product.id)
         log.audit.success(f"Product updated successfully | {product.product_name} | {user}")
@@ -1004,7 +1096,7 @@ class ProductDeleteView(APIView):
         product.save()
         audit_log_entry = audit_log(user=request.user,
                               action="Product created", 
-                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              ip_add=request.META.get('HTTP_X_FORWARDED_FOR'), 
                               model_name="Product", 
                               record_id=product.id)
         log.audit.success(f"Product deleted successfully | {product.product_name} | {user}")
@@ -1176,7 +1268,7 @@ class CreateInvoiceView(APIView):
                 # Update the invoice's total amount after processing all items
                 # invoice.total_amount = total_amount
                 invoice.save()
-                invoice_transactions = create_invoice_transaction(customer=customer, 
+                invoice_transactions = create_invoice_transaction(customer=customer, invoice_id=invoice.id, 
                                     products=transaction_products, 
                                     total_amount=total_amount, 
                                     tax_amount=tax_amount, 
@@ -1184,7 +1276,7 @@ class CreateInvoiceView(APIView):
                                     user=request.user)
             audit_log_entry = audit_log(user=request.user,
                               action="Invoice created", 
-                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              ip_add=request.META.get('HTTP_X_FORWARDED_FOR'), 
                               model_name="Invoice", 
                               record_id=invoice.id)
             log.audit.success(f"Invoice created successfully | {invoice.id} | {request.user}")
@@ -1415,6 +1507,12 @@ class InvoicePaidView(APIView):
                     payment_amount=payment_amount,
                 )
                 credit_account.balance += Decimal(payment_amount)
+                InvoiceTransactionMapping.objects.create(
+                    transaction=transaction,
+                    invoice=invoice_id,
+                    is_active=True
+                )
+
                 receivable.save()
 
                 credit_account.save()
@@ -1441,6 +1539,52 @@ class InvoicePaidView(APIView):
             log.trace.trace(f"Error processing invoice payments {traceback.format_exc()}")
             return Response({"detail": "Error processing payment."}, status=status.HTTP_400_BAD_REQUEST)
 
+
+class InvoiceDeleteView(APIView):
+    def get_user_from_token(self, request):
+        token = request.headers.get("Authorization", "").split(" ")[1]
+        try:
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+            user_id = payload.get("user_id")
+            return NewUser.objects.get(id=user_id)
+        except (jwt.ExpiredSignatureError, jwt.DecodeError, NewUser.DoesNotExist):
+            return None
+
+    def patch(self, request):
+        """
+        Mark one or more invoices as fully or partially paid, handle tracking, 
+        and record the payment details for the customer.
+        """
+        try:
+            user = self.get_user_from_token(request)
+            if not user:
+                return Response({"detail": "Invalid user token."}, status=status.HTTP_401_UNAUTHORIZED)
+
+            # Get the request data
+            invoice_id = request.data.get("invoice")  # List of invoice IDs and amounts
+            invoice = Invoice.objects.get(id=invoice_id)
+            with transaction.atomic():
+                invoice.is_active = False
+                delete_transactions = delete_invoice_transaction(invoice_id=invoice_id, user=user)
+                if not delete_transactions:
+                    return Response({"detail": "Error deleting transactions."}, status=status.HTTP_400_BAD_REQUEST)
+                invoice.save()
+
+            # Log and return response
+            log.audit.success(f"Invoice deleted successfully | {invoice_id} | {user}")
+            audit_log_entry = audit_log(user=request.user,
+                                        action="delete_invoice",
+                                        ip_add=request.META.get('HTTP_X_FORWARDED_FOR'),
+                                        model_name="Invoice",
+                                        model_id=invoice_id)
+            return Response({"detail": f"Invoice deleted successfully {invoice_id}."}, status=status.HTTP_200_OK)
+        except Invoice.DoesNotExist:
+            log.app.error("Invoice Not found")
+            return Response({"detail": "One or more invoices not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            log.app.error(f"Error processing payment: {str(e)}")
+            log.trace.trace(f"Error processing invoice payments {traceback.format_exc()}")
+            return Response({"detail": "Error processing payment."}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class SendInvoiceView_v1(APIView):
@@ -1563,7 +1707,7 @@ class SendInvoiceView(APIView):
                     "product_image": item.product.images if item.product.images else None,
                     "product": item.product.product_name,
                     "sku": item.product.sku,
-                    "dim": f"{item.product.tile_length} x {item.product.tile_width}",
+                    "dim": f"{item.product.tile_length} x {item.product.tile_width}" if item.product.tile_length and item.product.tile_width else "-",
                     "quantity": item.quantity,
                     "unit_type": "box",
                     "unit_price": item.unit_price,
@@ -1577,6 +1721,9 @@ class SendInvoiceView(APIView):
                 "items": items_data,
                 "logo_url": 'media/logo/RPLogo.png'
             }
+            css_file_path = os.path.join(settings.BASE_DIR, 'staticfiles', 'css', 'style.css')
+
+            context['css_file_path'] = css_file_path
             cc_email = invoice.customer_email_cc
             if cc_email:
                 cc_email = cc_email.split(",")
@@ -1591,7 +1738,7 @@ class SendInvoiceView(APIView):
             email_html_body = render_to_string("mail_template.html", context)
 
                 # Render the HTML template
-            html_string = render_to_string("invoice_template.html", context)
+            html_string = render_to_string("invoice_template_1.html", context)
 
             # Generate PDF
             pdf_buffer = generate_pdf_v3(html_string)
@@ -1602,7 +1749,7 @@ class SendInvoiceView(APIView):
                                 cc_email=cc_email, bcc_email=bcc_email)
             audit_log_entry = audit_log(user=request.user,
                               action="Invoice Sent", 
-                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              ip_add=request.META.get('HTTP_X_FORWARDED_FOR'), 
                               model_name="Invoice", 
                               record_id=invoice.id)
             log.audit.success(f"Invoice send successfully | {invoice.id} | {request.user}")
@@ -1627,14 +1774,18 @@ def generate_pdf_v3(html_string, options=None):
     default_options = {
         'enable-local-file-access': '',
         'page-size': 'A4',
-        'margin-top': '0.1in',
-        'margin-right': '0.1in',
-        'margin-bottom': '0.1in',
-        'margin-left': '0.1in',
+        'margin-top': '0',
+        'margin-right': '0',
+        'margin-bottom': '0',
+        'margin-left': '0',
         'encoding': "UTF-8",
-        'no-outline': None
+        'no-outline': None,
+        'zoom': "0.99",
+        'no-pdf-compression': '',
+        'disable-smart-shrinking': ''
     }
-    
+
+
     # Merge default options with any user-provided options
     if options:
         default_options.update(options)
@@ -1787,7 +1938,7 @@ class DownloadInvoiceView(APIView):
                     "product_image": item.product.images if item.product.images else None,
                     "product": item.product.product_name,
                     "sku": item.product.sku,
-                    "dim": f"{item.product.tile_length} x {item.product.tile_width}",
+                    "dim": f"{item.product.tile_length} x {item.product.tile_width}" if item.product.tile_length and item.product.tile_width else "-",
                     "quantity": item.quantity,
                     "unit_type": "box",
                     "unit_price": item.unit_price,
@@ -1800,7 +1951,61 @@ class DownloadInvoiceView(APIView):
                 "customer": invoice.customer,
                 "items": items_data,
             }
+            css_file_path = os.path.join(settings.BASE_DIR, 'staticfiles', 'css', 'style.css')
 
+            context['css_file_path'] = css_file_path
+
+            html_string = render_to_string("invoice_template_1.html", context)
+
+            
+            pdf_buffer = generate_pdf_v3(html_string)
+
+            # Return the PDF as a response
+            audit_log_entry = audit_log(user=request.user,
+                              action="Invoice Downloaded", 
+                              ip_add=request.META.get('HTTP_X_FORWARDED_FOR'), 
+                              model_name="Invoice", 
+                              record_id=invoice.id)
+            log.app.info(f"Invoice generated successfully | {invoice_id} | {request.user}")
+            pdf_buffer.seek(0)
+            return FileResponse(pdf_buffer, as_attachment=True,  filename=f"Invoice_{invoice_id}.pdf")
+
+        except Invoice.DoesNotExist:
+            return Response({"detail": "Invoice not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            log.trace.trace(f"Error while downloading Invoice | {invoice_id} | {traceback.format_exc()}")
+            return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class DownloadPackingSlipView(APIView):
+    def get(self, request, invoice_id):
+        try:
+            # Fetch the invoice and related items
+            invoice = Invoice.objects.get(id=invoice_id)
+            items = InvoiceItem.objects.filter(invoice=invoice)
+
+            # Prepare data for template rendering
+            items_data = [
+                {
+                    "product_image": item.product.images if item.product.images else None,
+                    "product": item.product.product_name,
+                    "sku": item.product.sku,
+                    "dim": f"{item.product.tile_length} x {item.product.tile_width}" if item.product.tile_length and item.product.tile_width else "-",
+                    "quantity": item.quantity,
+                    "unit_type": "box",
+                    "unit_price": item.unit_price,
+                    "total_price": item.unit_price * item.quantity,
+                }
+                for item in items
+            ]
+            context = {
+                "invoice": invoice,
+                "customer": invoice.customer,
+                "items": items_data,
+            }
+            css_file_path = os.path.join(settings.BASE_DIR, 'staticfiles', 'css', 'style.css')
+
+            context['css_file_path'] = css_file_path
             # Define PDF path
             # pdf_folder = os.path.join(settings.MEDIA_ROOT, 'pdfs')
             # os.makedirs(pdf_folder, exist_ok=True)
@@ -1809,20 +2014,20 @@ class DownloadInvoiceView(APIView):
             # # Check if PDF exists, generate if not
             # if not os.path.exists(pdf_path):
             #     # Render the HTML template
-            html_string = render_to_string("invoice_template.html", context)
+            html_string = render_to_string("invoice_template_2.html", context)
 
             
             pdf_buffer = generate_pdf_v3(html_string)
 
             # Return the PDF as a response
             audit_log_entry = audit_log(user=request.user,
-                              action="Invoice Downloaded", 
-                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              action="Packing Slip Downloaded", 
+                              ip_add=request.META.get('HTTP_X_FORWARDED_FOR'), 
                               model_name="Invoice", 
                               record_id=invoice.id)
-            log.app.info(f"Invoice generated successfully | {invoice_id} | {request.user}")
             pdf_buffer.seek(0)
-            return FileResponse(pdf_buffer, as_attachment=True,  filename=f"Invoice_{invoice_id}.pdf")
+            log.app.info(f"Packing slip generated successfully | {invoice_id} | {request.user}")
+            return FileResponse(pdf_buffer, as_attachment=True,  filename=f"Packing_slip_{invoice_id}.pdf")
 
         except Invoice.DoesNotExist:
             return Response({"detail": "Invoice not found."}, status=status.HTTP_404_NOT_FOUND)
@@ -2032,13 +2237,13 @@ class CreateBillView(APIView):
 
                 # Update the invoice's total amount after processing all items
                 # invoice.total_amount = total_amount
-                bill_payment = create_bill_transaction(vendor=vendor, products=transaction_products,
+                bill_payment = create_bill_transaction(bill_id=bill.id, vendor=vendor, products=transaction_products,
                                                        total_amount=total_amount, user=request.user)
                 bill.save()
 
             audit_log_entry = audit_log(user=request.user,
                               action="Bill Created", 
-                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              ip_add=request.META.get('HTTP_X_FORWARDED_FOR'), 
                               model_name="Bill", 
                               record_id=bill.id)
             log.audit.success(f"Bill created successfully | {bill.id} | {user}")
@@ -2110,6 +2315,53 @@ class RetrieveBillView(APIView):
             return Response(bill_data, status=status.HTTP_200_OK)
         except Bill.DoesNotExist:
             return Response({"detail": "Bill not found."}, status=status.HTTP_404_NOT_FOUND)
+
+
+class BillDeleteView(APIView):
+    def get_user_from_token(self, request):
+        token = request.headers.get("Authorization", "").split(" ")[1]
+        try:
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+            user_id = payload.get("user_id")
+            return NewUser.objects.get(id=user_id)
+        except (jwt.ExpiredSignatureError, jwt.DecodeError, NewUser.DoesNotExist):
+            return None
+
+    def patch(self, request):
+        """
+        Mark one or more invoices as fully or partially paid, handle tracking, 
+        and record the payment details for the customer.
+        """
+        try:
+            user = self.get_user_from_token(request)
+            if not user:
+                return Response({"detail": "Invalid user token."}, status=status.HTTP_401_UNAUTHORIZED)
+
+            # Get the request data
+            bill_id = request.data.get("Bill")  # List of Bill IDs and amounts
+            bill = Bill.objects.get(id=bill_id)
+            with transaction.atomic():
+                Bill.is_active = False
+                delete_transactions = delete_bill_transaction(bill_id=bill_id, user=user)
+                if not delete_transactions:
+                    return Response({"detail": "Error deleting transactions."}, status=status.HTTP_400_BAD_REQUEST)
+                bill.save()
+
+            # Log and return response
+            log.audit.success(f"bill deleted successfully | {bill_id} | {user}")
+            audit_log_entry = audit_log(user=request.user,
+                                        action="delete bill",
+                                        ip_add=request.META.get('HTTP_X_FORWARDED_FOR'),
+                                        model_name="Bill",
+                                        model_id=bill_id)
+            return Response({"detail": f"bill deleted successfully {bill_id}."}, status=status.HTTP_200_OK)
+        except Bill.DoesNotExist:
+            log.app.error("Bill Not found")
+            return Response({"detail": "bill not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            log.app.error(f"Error processing payment: {str(e)}")
+            log.trace.trace(f"Error processing bill payments {traceback.format_exc()}")
+            return Response({"detail": "Error processing payment."}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class BillPaidView(APIView):

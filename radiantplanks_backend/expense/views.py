@@ -159,7 +159,7 @@ class CreateExpenseView(APIView):
                 expense.save()
             audit_log_entry = audit_log(user=request.user,
                               action="Expense Created", 
-                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              ip_add=request.META.get('HTTP_X_FORWARDED_FOR'), 
                               model_name="Expense", 
                               record_id=expense.id)
             log.audit.success(f"Expense created successfully | {expense.id} | {user}")

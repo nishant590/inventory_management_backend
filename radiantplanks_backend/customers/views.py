@@ -89,7 +89,7 @@ class CustomerCreateView(APIView):
                     )
             audit_log_entry = audit_log(user=request.user,
                               action="Customer created", 
-                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              ip_add=request.META.get('HTTP_X_FORWARDED_FOR'), 
                               model_name="Customer", 
                               record_id=customer.customer_id)
             log.audit.success(f"Customer created successfully | {customer.business_name} | {request.user} ")
@@ -217,7 +217,7 @@ class BulkCustomerCreateView(APIView):
 
                 successful_creates = len(customers_to_create)
 
-            audit_log(user=request.user, action="Bulk customer import", ip_add=request.META.get('REMOTE_ADDR'))
+            audit_log(user=request.user, action="Bulk customer import", ip_add=request.META.get('HTTP_X_FORWARDED_FOR'))
 
             return Response({
                 'message': 'Bulk customer import completed.',
@@ -349,7 +349,7 @@ class CustomerEditView(APIView):
                 )
         audit_log_entry = audit_log(user=request.user,
                               action="Customer Edited", 
-                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              ip_add=request.META.get('HTTP_X_FORWARDED_FOR'), 
                               model_name="Customer", 
                               record_id=customer.customer_id)
         log.audit.success(f"Customer updated successfully | {customer.business_name} | {request.user} ")
@@ -369,7 +369,7 @@ class CustomerDeleteView(APIView):
             log.audit.success(f"Customer deactivated successfully | {customer.business_name} | {request.user}")
             audit_log_entry = audit_log(user=request.user,
                               action="Customer Deleted", 
-                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              ip_add=request.META.get('HTTP_X_FORWARDED_FOR'), 
                               model_name="Customer", 
                               record_id=customer.customer_id)
             return Response({"message": "Customer deactivated successfully"}, status=status.HTTP_200_OK)
@@ -452,7 +452,7 @@ class VendorCreateView(APIView):
                     )
             audit_log_entry = audit_log(user=request.user,
                               action="Vendor Created", 
-                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              ip_add=request.META.get('HTTP_X_FORWARDED_FOR'), 
                               model_name="Vendor", 
                               record_id=vendor.vendor_id)
             log.audit.success(f"Vendor created successfully | {vendor.business_name} | {request.user} ")
@@ -544,7 +544,7 @@ class VendorEditView(APIView):
                 )
         audit_log_entry = audit_log(user=request.user,
                               action="Vendor Edited", 
-                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              ip_add=request.META.get('HTTP_X_FORWARDED_FOR'), 
                               model_name="Vendor", 
                               record_id=vendor.vendor_id)
         log.audit.success(f"Vendor updated successfully | {vendor.business_name} | {request.user} ")
@@ -564,7 +564,7 @@ class VendorDeleteView(APIView):
             log.audit.success(f"Vendor deactivated successfully | {vendor.business_name} | {request.user}")
             audit_log_entry = audit_log(user=request.user,
                               action="Vendor Deleted", 
-                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              ip_add=request.META.get('HTTP_X_FORWARDED_FOR'), 
                               model_name="Vendor", 
                               record_id=vendor.vendor_id)
             return Response({"message": "vendor deactivated successfully"}, status=status.HTTP_200_OK)
@@ -737,7 +737,7 @@ class BulkVendorCreateView(APIView):
 
                 successful_creates = len(vendors_to_create)
 
-            audit_log(user=request.user, action="Bulk vendor import", ip_add=request.META.get('REMOTE_ADDR'))
+            audit_log(user=request.user, action="Bulk vendor import", ip_add=request.META.get('HTTP_X_FORWARDED_FOR'))
 
             return Response({
                 'message': 'Bulk vendor import completed.',

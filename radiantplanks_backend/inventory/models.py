@@ -1,6 +1,7 @@
 from django.db import models
 from authentication.models import NewUser
 from customers.models import Customer, Vendor
+from accounts.models import Transaction
 from django.utils import timezone
 from django.utils.timezone import now
 from accounts.models import Account
@@ -239,3 +240,21 @@ class BillItems(models.Model):
 
     def __str__(self):
         return f"Item {self.id} - bill {self.bill} - Product {self.product_id}"
+    
+
+class InvoiceTransactionMapping(models.Model):
+    invoice_id = models.CharField(max_length=255, unique=True)  # Unique Invoice ID
+    transaction = models.ForeignKey(Transaction, on_delete=models.CASCADE)
+    is_active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return f"Mapping for Invoice {self.invoice_id}"
+    
+
+class BillTransactionMapping(models.Model):
+    bill_id = models.CharField(max_length=255, unique=True)  # Unique bill ID
+    transaction = models.ForeignKey(Transaction, on_delete=models.CASCADE)
+    is_active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return f"Mapping for Invoice {self.invoice_id}"

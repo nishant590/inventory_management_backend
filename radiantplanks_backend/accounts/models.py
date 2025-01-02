@@ -21,7 +21,7 @@ class Account(models.Model):
         
         # Liabilities
         ('accounts_payable', 'Accounts Payable'),
-        ('Tax_payable', 'Tax Payable'),
+        ('tax_payable', 'Tax Payable'),
         ('credit_card', 'Credit Card'),
         ('current_liabilities', 'Current Liabilities'),
         ('long_term_liabilities', 'Long Term Liabilities'),

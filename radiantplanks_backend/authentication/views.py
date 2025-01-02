@@ -95,7 +95,7 @@ class RegisterAPIView(APIView):
             log.audit.success(f"User added successfully | {username} | ")
             audit_log_entry = audit_log(user=request.user,
                                 action="Create User", 
-                                ip_add=request.META.get('REMOTE_ADDR'), 
+                                ip_add=request.META.get('HTTP_X_FORWARDED_FOR'), 
                                 model_name="NewUser", 
                                 record_id=user.id)
             return Response({"message": "User registered successfully"}, status=status.HTTP_201_CREATED)

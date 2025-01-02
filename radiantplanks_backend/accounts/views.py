@@ -63,7 +63,7 @@ class AddAccountAPI(APIView):
             log.audit.success(f"Account created successfully | {account.name} | {request.user}")
             audit_log_entry = audit_log(user=request.user,
                               action="Account Created", 
-                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              ip_add=request.META.get('HTTP_X_FORWARDED_FOR'), 
                               model_name="NewUser", 
                               record_id=account.id)
             return Response(
@@ -142,7 +142,7 @@ class AccountReceivablesView(APIView):
             receivables_data = df.to_dict(orient="records")
             audit_log_entry = audit_log(user=request.user,
                               action="Receivable Reports viewed", 
-                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              ip_add=request.META.get('HTTP_X_FORWARDED_FOR'), 
                               model_name="ReceivableTracking", 
                               record_id=0)
             
@@ -197,7 +197,7 @@ class AccountPayablesView(APIView):
             payables_data = df.to_dict(orient="records")
             audit_log_entry = audit_log(user=request.user,
                               action="Payable Reports viewed", 
-                              ip_add=request.META.get('REMOTE_ADDR'), 
+                              ip_add=request.META.get('HTTP_X_FORWARDED_FOR'), 
                               model_name="PayableTracking", 
                               record_id=0)
             return Response(
@@ -340,7 +340,8 @@ class ProfitLossStatementView(APIView):
                 # Apply date filtering if dates are provided
                 income_query = TransactionLine.objects.filter(
                     account=account, 
-                    transaction__transaction_type='income'
+                    transaction__transaction_type='income',
+                    is_active=True
                 )
                 
                 if start_date:
@@ -440,7 +441,8 @@ class ProfitLossStatementCustomerView(APIView):
                 income_query = TransactionLine.objects.filter(
                     account=account,
                     transaction__transaction_type='income',
-                    transaction__payment_details__customer=customer 
+                    transaction__payment_details__customer=customer,
+                    is_active=True 
                 )
 
                 if start_date:
@@ -474,7 +476,8 @@ class ProfitLossStatementCustomerView(APIView):
                 expense_query = TransactionLine.objects.filter(
                     account=account,
                     transaction__transaction_type='expense',
-                    transaction__payment_details__customer=customer 
+                    transaction__payment_details__customer=customer,
+                    is_active=True 
                 )
 
                 if start_date:
@@ -522,7 +525,8 @@ class AccountsReceivableAPIView(APIView):
             receivable_account = Account.objects.filter(account_type='accounts_receivable')
             receivables = TransactionLine.objects.filter(
                 transaction__date__range=[start_date, end_date],
-                account__in=receivable_account
+                account__in=receivable_account,
+                is_active=True
             ).aggregate(total_receivable=Sum('debit_amount') - Sum('credit_amount'))
                 
             return Response({"total_receivable": receivables['total_receivable'] or 0}, status=status.HTTP_200_OK)
@@ -544,7 +548,8 @@ class AccountsPayableAPIView(APIView):
             payable_account = Account.objects.filter(account_type='accounts_payable')
             payables = TransactionLine.objects.filter(
                 transaction__date__range=[start_date, end_date],
-                account__in=payable_account
+                account__in=payable_account,
+                is_active=True
             ).aggregate(total_payable=Sum('credit_amount') - Sum('debit_amount'))
 
             return Response({"total_payable": payables['total_payable'] or 0}, status=status.HTTP_200_OK)

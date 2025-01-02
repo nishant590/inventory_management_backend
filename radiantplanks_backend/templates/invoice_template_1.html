@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="file:///{{ css_file_path|safe }}">
+    <title>Invoice</title>
+</head>
+<body>
+    <div class="invoice-container">
+        <div class="header-bar"></div>
+
+        <div class="invoice-num">
+            <div class="logo">
+               <img src="file:///C:/pruthatek/projects/radiantplanks/inventory_managment_backend/radiantplanks_backend/media/logo/RPlogo.png" alt="Logo" style="width: 145px; height: auto;"/>
+               <!-- <img src="file:///home/ubuntu/new_app/inventory_managment_backend/radiantplanks_backend/media/logo/RPlogo.png" alt="Logo" /> -->
+            </div>
+            <div class="invoice-flex ">
+                <p class="invoice-title">Invoice</p>
+                <p class="invoice-number"> #{{ invoice.id }} </p>
+            </div>
+        </div>
+
+        <table class="table-container">
+            <tr>
+                <!-- Left Column -->
+                <td class="left-column">
+                    <p class="section-title">Radiant Planks</p>
+                    <p class="contact-info">
+                        <a href="tel:(832) 580-0385" class="link" >(832) 580-0385</a>
+                    </p>
+                    <p class="contact-info">
+                        <a href="mailto:Info@radiantplanks.com" class="link">Info@radiantplanks.com</a>
+                    </p>
+                </td>
+        
+                <!-- Right Column -->
+                <td class="right-column">
+                    <p class="section-details">
+                        <b>Account No:</b> 1234566789
+                    </p>
+                    <p class="section-details">
+                        <b>Account Holder's Name:</b> Radiant Planks
+                    </p>
+                    <p class="section-details">
+                        <b>Bank Name:</b> American Bank
+                    </p>
+                    <p class="section-details">
+                        <b>Branch Name:</b> New Jersey
+                    </p>
+                </td>
+            </tr>
+        </table>
+        
+        <table class="table-details">
+            <tr>
+                <td class="table-details-td" >
+                    <p class="section-title2" >Bill To</p>
+                    <p class="section-details2">{{ customer.business_name }}</p>
+                    <p class="section-details3">{{ invoice.billing_address_street_1 }}<br>
+                        {{ invoice.billing_address_street_2 }}<br>
+                        {{ invoice.billing_address_city }}, {{ invoice.billing_address_state }}<br>
+                        {{ invoice.billing_address_postal_code }}, {{ invoice.billing_address_country }}<br>
+                        {{ customer.phone }}<br>
+                        {{ customer.email }}</p>
+                </td>
+                <td class="table-details-td" >
+                    <p class="section-title2">Ship To</p>
+                    <p class="section-details2">{{ customer.business_name }}</p>
+                    <p class="section-details3">{{ invoice.shipping_address_street_1 }}<br>
+                        {{ invoice.shipping_address_street_2 }}<br>
+                        {{ invoice.shipping_address_city }}, {{ invoice.shipping_address_state }}<br>
+                        {{ invoice.shipping_address_postal_code }}, {{ invoice.shipping_address_country }}<br>
+                        {{ customer.phone }}<br>
+                        {{ customer.email }}</p>
+                </td>
+                <td  class="table-details-td">
+                    <p class="section-title2">Details</p>
+                    <p class="details-section">
+                        <span>Issue date:</span> <span>{{ invoice.bill_date|date:"m-d-Y" }}</span>
+                    </p>
+                    <p class="details-section">
+                        <span>Term:</span> <span>{{ invoice.terms }}</span>
+                    </p>
+                    <p class="details-section">
+                        <span>Due date:</span> <span>{{ invoice.due_date|date:"m-d-Y" }}</span>
+                    </p>
+                </td>
+            </tr>
+        </table>
+        
+
+        <table class="table-details2">
+            <thead class="table-details-th">
+                <tr>
+                    <th>SR.</th>
+                    <th >COLOR</th>
+                    <th>SKU</th>
+                    <th >PRODUCT/SERVICE</th>
+                    <th >DESCRIPTION</th>
+                    <th >QTY</th>
+                    <th >RATE</th>
+                    <th >AMOUNT</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in items %}
+                <tr class="table-details-td">
+                    <td >{{ forloop.counter }}</td>
+                    <td>
+                        {% if item.product_image %}
+                        <img src="file:///C:/pruthatek/projects/radiantplanks/inventory_managment_backend/radiantplanks_backend/{{ item.product_image }}" 
+                             alt="Product" 
+                             style="width: 25px; height: 25px; border-radius: 2px;">
+                        <!-- <img class="product-image" src="file:///home/ubuntu/new_app/inventory_managment_backend/radiantplanks_backend/{{ item.product_image }}" 
+                             alt="Product"  > -->
+                        {% endif %}
+                    </td>
+                    <td>{{ item.sku }}</td>
+                    <td>{{ item.product }}</td>
+                    <td>{{ item.dim }}</td>
+                    <td>{{ item.quantity }}</td>
+                    <td>${{ item.unit_price }}</td>
+                    <td>${{ item.total_price }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <table class="total-container">
+            <tr>
+                <!-- Terms & Conditions -->
+                <td class="total-container-td">
+                    <p class="tnc">Terms & Conditions</p>
+                    <p class="tnc-detail">{{ invoice.message_on_invoice }}</p>
+                </td>
+        
+                <!-- Signature -->
+                <td class="signature-box">
+                    <div class="signature"></div>
+                    <p class="sign">Your Signature</p>
+                </td>
+        
+                <!-- Totals -->
+                <td class="totals">
+                    <table class="totals-table">
+                        <tr>
+                            <td class="total-row">Subtotal</td>
+                            <td class="total-row">${{ invoice.sum_amount }}</td>
+                        </tr>
+                        <tr>
+                            <td class="total-row">Sales Tax ({{ invoice.tax_percentage }}%)</td>
+                            <td class="total-row">${{ invoice.tax_amount }}</td>
+                        </tr>
+                        <tr>
+                            <td class="total-row">Shipping</td>
+                            <td class="total-row">$0.00</td>
+                        </tr>
+                        <tr>
+                            <td class="total-row">Remaining</td>
+                            <td class="total-row">${{ invoice.total_amount }}</td>
+                        </tr>
+                        <tr class="total-row-highlight">
+                            <td class="total">Total</td>
+                            <td class="total-row-text">${{ invoice.total_amount }}</td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+        </table>    
+        <div class="footer-bar"></div>    
+    </div>
+</body>
+</html>
