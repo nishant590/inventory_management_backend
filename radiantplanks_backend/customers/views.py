@@ -813,14 +813,14 @@ class GetContractorTransactions(APIView):
     def get(self, request):
         # Fetch all payments for vendors marked as contractors
         try:
-            vendor_name = request.GET.get('vendor_id', None)
+            vendor_id = request.GET.get('vendor_id', None)
             contractor_payments = VendorPaymentDetails.objects.filter(
                 vendor__is_contractor=True, 
                 payment_method__in=['cash', 'cheque', 'bank_transfer']
             ).select_related('vendor')
 
-            if vendor_name:
-                contractor_payments = contractor_payments.filter(vendor__name=vendor_name)
+            if vendor_id:
+                contractor_payments = contractor_payments.filter(vendor__vendor_id=vendor_id)
 
             # Format the data as a list of dictionaries
             if not contractor_payments.exists():
