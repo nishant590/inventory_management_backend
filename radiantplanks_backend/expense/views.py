@@ -20,7 +20,7 @@ from io import BytesIO
 from customers.models import Customer, Vendor
 from django.utils import timezone
 from django.core.mail import EmailMessage
-from accounts.models import Account, Transaction, TransactionLine, ReceivableTracking
+from accounts.models import Account, Transaction, TransactionLine, ReceivableTracking, VendorPaymentDetails
 from django.template.loader import render_to_string
 import math
 import uuid
@@ -108,6 +108,17 @@ class CreateExpenseView(APIView):
                     is_active=True
                 )
 
+
+                VendorPaymentDetails.objects.create(
+                    vendor=vendor,
+                    transaction=transaction,
+                    payment_method=request.data.get("payment_method", ""),
+                    transaction_reference_id=request.data.get("transaction_id", ""),
+                    bank_name=request.data.get("bank_name", ""),
+                    cheque_number=request.data.get("cheque_number", ""),
+                    payment_date=payment_date,
+                    payment_amount=total_amount,
+                )
 
                 transaction = Transaction.objects.create(
                     reference_number=expense_number,
