@@ -1416,6 +1416,7 @@ class InvoicePaidView(APIView):
             if use_advanced_payment:
                 payment_amount = receivable.advance_payment
                 receivable.advance_payment = 0
+                payment_amount = Decimal(payment_amount)
                 if payment_amount <= Decimal("0.00"):
                     return Response({"detail": "Payment amount exceeds advance payment."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1442,13 +1443,13 @@ class InvoicePaidView(APIView):
                     invoice.paid_amount += payment_for_invoice
                     invoice.unpaid_amount -= payment_for_invoice
                     invoice.payment_status = "paid" if invoice.unpaid_amount == 0 else "partially_paid"
-                    invoice.save()
 
                     # Add to total allocated
                     total_allocated += payment_for_invoice
                     if total_allocated > payment_amount:
                         return Response({"detail": "Payment amount is insufficient for allocation."}, status=status.HTTP_400_BAD_REQUEST)
 
+                    invoice.save()
                     # Record invoice transaction
                     transactions_to_log.append({
                         "description": f"Payment for invoice {invoice.id}",
@@ -2247,7 +2248,7 @@ class CreateBillView(APIView):
                               model_name="Bill", 
                               record_id=bill.id)
             log.audit.success(f"Bill created successfully | {bill.id} | {user}")
-            return Response({"invoice_id": bill.bill_number, "message": "Bill created successfully."}, status=status.HTTP_201_CREATED)
+            return Response({"bill_id":bill.id, "bill_number": bill.bill_number, "message": "Bill created successfully."}, status=status.HTTP_201_CREATED)
 
         except Exception as e:
             log.trace.trace(f"Error occured while creating bill, {traceback.format_exc()}")
@@ -2403,6 +2404,7 @@ class BillPaidView(APIView):
 
             if use_advanced_payment:
                 payment_amount = payable.advance_payment
+                payment_amount = Decimal(payment_amount)
                 payable.advance_payment = Decimal("0.00")
 
             total_allocated = Decimal("0.00")
@@ -2428,12 +2430,12 @@ class BillPaidView(APIView):
                     bill.paid_amount += payment_for_bill
                     bill.unpaid_amount -= payment_for_bill
                     bill.payment_status = "paid" if bill.unpaid_amount == 0 else "partially_paid"
-                    bill.save()
 
                     # Add to total allocated
                     total_allocated += payment_for_bill
                     if total_allocated > payment_amount:
                         return Response({"detail": "Payment amount is insufficient for allocation."}, status=status.HTTP_400_BAD_REQUEST)
+                    bill.save()
 
                     # Record bill transaction
                     transactions_to_log.append({
