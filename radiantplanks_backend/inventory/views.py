@@ -1416,6 +1416,8 @@ class InvoicePaidView(APIView):
             if use_advanced_payment:
                 payment_amount = receivable.advance_payment
                 receivable.advance_payment = 0
+                if payment_amount <= Decimal("0.00"):
+                    return Response({"detail": "Payment amount exceeds advance payment."}, status=status.HTTP_400_BAD_REQUEST)
 
             total_allocated = Decimal("0.00")
             transactions_to_log = []
@@ -1455,17 +1457,15 @@ class InvoicePaidView(APIView):
                     })
 
 
-            # Update receivable tracking
-            receivable.receivable_amount -= Decimal(total_allocated)
-            accounts_recievable.balance -= Decimal(total_allocated)
+                # Update receivable tracking
+                receivable.receivable_amount -= Decimal(total_allocated)
+                accounts_recievable.balance -= Decimal(total_allocated)
 
-            # Handle overpayment
-            overpayment = Decimal(payment_amount) - Decimal(total_allocated)
-            if overpayment > 0:
-                receivable.advance_payment += Decimal(overpayment)
+                # Handle overpayment
+                overpayment = Decimal(payment_amount) - Decimal(total_allocated)
+                if overpayment > 0:
+                    receivable.advance_payment += Decimal(overpayment)
 
-            # Create a transaction for the payment
-            with db_transaction.atomic():
                 transaction = Transaction.objects.create(
                     reference_number=f"PAY-{uuid.uuid4().hex[:6].upper()}",
                     transaction_type="income",
@@ -2443,17 +2443,15 @@ class BillPaidView(APIView):
                     })
 
 
-            # Update payable tracking
-            payable.payable_amount -= Decimal(total_allocated)
-            accounts_payable.balance -= Decimal(total_allocated)
+                # Update payable tracking
+                payable.payable_amount -= Decimal(total_allocated)
+                accounts_payable.balance -= Decimal(total_allocated)
 
-            # Handle overpayment
-            overpayment = Decimal(payment_amount) - Decimal(total_allocated)
-            if overpayment > 0:
-                payable.advance_payment += Decimal(overpayment)
+                # Handle overpayment
+                overpayment = Decimal(payment_amount) - Decimal(total_allocated)
+                if overpayment > 0:
+                    payable.advance_payment += Decimal(overpayment)
 
-            # Create a transaction for the payment
-            with db_transaction.atomic():
                 transaction = Transaction.objects.create(
                     reference_number=f"PAY-{uuid.uuid4().hex[:6].upper()}",
                     transaction_type="expense",
