@@ -106,7 +106,7 @@ class Transaction(models.Model):
     is_reconciled = models.BooleanField(default=False)
     tax_amount = models.DecimalField(max_digits=15, decimal_places=2, default=0)
     attachment = models.CharField(max_length=100, null=True, blank=True)
-    is_active = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
     created_by = models.ForeignKey(NewUser, on_delete=models.PROTECT, related_name='created_transactions')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -150,7 +150,7 @@ class TransactionLine(models.Model):
     description = models.CharField(max_length=255, blank=True)
     debit_amount = models.DecimalField(max_digits=15, decimal_places=2, default=0, validators=[MinValueValidator(Decimal('0.00'))])
     credit_amount = models.DecimalField(max_digits=15, decimal_places=2, default=0, validators=[MinValueValidator(Decimal('0.00'))])
-    is_active = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
     
     class Meta:
         ordering = ['id']

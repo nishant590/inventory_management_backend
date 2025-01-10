@@ -220,7 +220,7 @@ class Bill(models.Model):
     created_by = models.ForeignKey(NewUser, on_delete=models.CASCADE, related_name="bill_created_by", null=True)
     created_date = models.DateTimeField(auto_now_add=True)
     updated_date = models.DateTimeField(auto_now=True)
-    is_active = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
 
 
 class BillItems(models.Model):
@@ -243,7 +243,7 @@ class BillItems(models.Model):
     
 
 class InvoiceTransactionMapping(models.Model):
-    invoice_id = models.CharField(max_length=255, unique=True)  # Unique Invoice ID
+    invoice_id = models.CharField(max_length=255)  # Unique Invoice ID
     transaction = models.ForeignKey(Transaction, on_delete=models.CASCADE)
     is_active = models.BooleanField(default=True)
 
@@ -252,7 +252,7 @@ class InvoiceTransactionMapping(models.Model):
     
 
 class BillTransactionMapping(models.Model):
-    bill_id = models.CharField(max_length=255, unique=True)  # Unique bill ID
+    bill_id = models.CharField(max_length=255)  # Unique bill ID
     transaction = models.ForeignKey(Transaction, on_delete=models.CASCADE)
     is_active = models.BooleanField(default=True)
 

@@ -18,7 +18,7 @@ class Expense(models.Model):
     created_by = models.ForeignKey(NewUser, on_delete=models.CASCADE, related_name="expense_created_by", null=True)
     created_date = models.DateTimeField(auto_now_add=True)
     updated_date = models.DateTimeField(auto_now=True)
-    is_active = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
 
 
 class ExpenseItems(models.Model):
