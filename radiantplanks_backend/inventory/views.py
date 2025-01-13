@@ -711,6 +711,7 @@ class ProductListView(APIView):
             {
                 "id": product.id,
                 "product_image": product.images,
+                "product_type": product.product_type,
                 "product_name": product.product_name,
                 "category": product.category_id.name if product.category_id else None,
                 "sku": product.sku,
