@@ -1044,6 +1044,7 @@ class ProductRetrieveView(APIView):
         product_data = {
             "id": product.id,
             "product_name": product.product_name,
+            "product_type": product.product_type,
             "sku": product.sku,
             "barcode": product.barcode,
             "category_id": product.category_id.id if product.category_id else None,
@@ -1063,9 +1064,12 @@ class ProductRetrieveView(APIView):
             "created_date": product.created_date,
             "updated_date": product.updated_date,
             "is_active": product.is_active,
-            "inventory_account": product_accounts.inventory_account.name,
-            "inventory_account_id": product_accounts.inventory_account.id,
         }
+
+        if product.product_type == "product":
+            product_data["inventory_account"] = product_accounts.inventory_account.name
+            product_data["inventory_account_id"] = product_accounts.inventory_account.id
+
 
         return Response(product_data, status=status.HTTP_200_OK)
 
