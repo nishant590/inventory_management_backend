@@ -842,6 +842,7 @@ class ProductCreateView(APIView):
 
         # Create product/service
         product = Product.objects.create(
+            product_type = product_type,
             product_name = product_name, 
             sku = sku, 
             barcode = barcode, 
