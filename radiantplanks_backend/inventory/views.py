@@ -989,16 +989,16 @@ class ProductUpdateView(APIView):
             product.images = logo_url
 
         if product.product_type == 'product':
-            account_mapping = ProductAccountMapping.objects.get(product=product.id)
             # income_account = data.get("income_account")
             inventory_account = data.get("inventory_account")
             # income_account = Account.objects.get(id=income_account, is_active=True)
             inventory_account = Account.objects.get(id=inventory_account, is_active=True)
-            accountmapping = ProductAccountMapping.objects.create(
-                product = product,
-                inventory_account = inventory_account
-            )
-            account_mapping.save()
+            account_mapping = ProductAccountMapping.objects.get(product=product.id)
+            if ProductAccountMapping.DoesNotExist:
+                product_account = ProductAccountMapping.objects.create(product=product, inventory_account=inventory_account)
+            else:
+                account_mapping.inventory_account = inventory_account
+                account_mapping.save()
 
         # Save updated product
         product.updated_by = user
