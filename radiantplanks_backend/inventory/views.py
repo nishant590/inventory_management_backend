@@ -1834,10 +1834,10 @@ def generate_pdf_v3(html_string, options=None):
     
     except OSError as e:
         # Common error if wkhtmltopdf is not installed
-        print(f"Error generating PDF: {e}")
+        log.trace.trace(f"Error generating PDF | | {traceback.format_exc()}")
         return None
     except Exception as e:
-        print(f"Unexpected error generating PDF: {e}")
+        log.trace.trace(f"Error generating PDF | | {traceback.format_exc()}")
         return None     
 
 def generate_pdf_sync(html_string, pdf_path):
