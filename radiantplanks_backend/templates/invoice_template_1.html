@@ -12,7 +12,8 @@
         <div class="invoice-num">
             <div class="logo">
                <!-- <img src="file:///C:/pruthatek/projects/radiantplanks/inventory_managment_backend/radiantplanks_backend/media/logo/RPlogo.png" alt="Logo" style="width: 145px; height: auto;"/> -->
-               <img src="file:///home/ubuntu/new_app/inventory_managment_backend/radiantplanks_backend/media/logo/RPlogo.png" alt="Logo" />
+               <img src="file:///{{ logo_file_path }}" alt="Logo" style="width: 145px; height: auto;" />
+               <!-- <img src="file:///home/ubuntu/new_app/inventory_managment_backend/radiantplanks_backend/media/logo/RPlogo.png" alt="Logo" /> -->
             </div>
             <div class="invoice-flex ">
                 <p class="invoice-title">Invoice</p>
@@ -111,8 +112,11 @@
                         <!-- <img src="file:///C:/pruthatek/projects/radiantplanks/inventory_managment_backend/radiantplanks_backend/{{ item.product_image }}" 
                              alt="Product" 
                              style="width: 25px; height: 25px; border-radius: 2px;"> -->
-                        <img class="product-image" src="file:///home/ubuntu/new_app/inventory_managment_backend/radiantplanks_backend/{{ item.product_image }}" 
-                             alt="Product"  >
+                        <!-- <img class="product-image" src="file:///home/ubuntu/new_app/inventory_managment_backend/radiantplanks_backend/{{ item.product_image }}" 
+                             alt="Product"  > -->
+                        <img class="product-image" src="file:///{{ item.product_image }}" 
+                             alt="Product"  
+                             style="width: 25px; height: 25px; border-radius: 2px;">
                         {% endif %}
                     </td>
                     <td>{{ item.sku }}</td>

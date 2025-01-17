@@ -1711,7 +1711,7 @@ class SendInvoiceView(APIView):
             # Prepare data for template rendering
             items_data = [
                 {
-                    "product_image": item.product.images if item.product.images else None,
+                    "product_image": os.path.join(settings.BASE_DIR, item.product.images) if item.product.images else None,
                     "product": item.product.product_name,
                     "sku": item.product.sku,
                     "dim": f"{item.product.tile_length} x {item.product.tile_width}" if item.product.tile_length and item.product.tile_width else "-",
@@ -1729,8 +1729,10 @@ class SendInvoiceView(APIView):
                 "logo_url": 'media/logo/RPLogo.png'
             }
             css_file_path = os.path.join(settings.BASE_DIR, 'staticfiles', 'css', 'style.css')
+            logo_file_path = os.path.join(settings.BASE_DIR, 'media', 'logo', 'RPlogo.png')
 
             context['css_file_path'] = css_file_path
+            context['logo_file_path'] = logo_file_path
             cc_email = invoice.customer_email_cc
             if cc_email:
                 cc_email = cc_email.split(",")
@@ -1942,7 +1944,8 @@ class DownloadInvoiceView(APIView):
             # Prepare data for template rendering
             items_data = [
                 {
-                    "product_image": item.product.images if item.product.images else None,
+                    "product_image": os.path.join(settings.BASE_DIR, item.product.images) if item.product.images else None,
+                    # "product_image": item.product.images if item.product.images else None,
                     "product": item.product.product_name,
                     "sku": item.product.sku,
                     "dim": f"{item.product.tile_length} x {item.product.tile_width}" if item.product.tile_length and item.product.tile_width else "-",
@@ -1959,8 +1962,10 @@ class DownloadInvoiceView(APIView):
                 "items": items_data,
             }
             css_file_path = os.path.join(settings.BASE_DIR, 'staticfiles', 'css', 'style.css')
+            logo_file_path = os.path.join(settings.BASE_DIR, 'media', 'logo', 'RPlogo.png')
 
             context['css_file_path'] = css_file_path
+            context['logo_file_path'] = logo_file_path
 
             html_string = render_to_string("invoice_template_1.html", context)
 
