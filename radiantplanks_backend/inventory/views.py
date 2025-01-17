@@ -1999,7 +1999,7 @@ class DownloadPackingSlipView(APIView):
             # Prepare data for template rendering
             items_data = [
                 {
-                    "product_image": item.product.images if item.product.images else None,
+                    "product_image": os.path.join(settings.BASE_DIR, item.product.images) if item.product.images else None,
                     "product": item.product.product_name,
                     "sku": item.product.sku,
                     "dim": f"{item.product.tile_length} x {item.product.tile_width}" if item.product.tile_length and item.product.tile_width else "-",
@@ -2016,8 +2016,10 @@ class DownloadPackingSlipView(APIView):
                 "items": items_data,
             }
             css_file_path = os.path.join(settings.BASE_DIR, 'staticfiles', 'css', 'style.css')
+            logo_file_path = os.path.join(settings.BASE_DIR, 'media', 'logo', 'RPlogo.png')
 
             context['css_file_path'] = css_file_path
+            context['logo_file_path'] = logo_file_path
             # Define PDF path
             # pdf_folder = os.path.join(settings.MEDIA_ROOT, 'pdfs')
             # os.makedirs(pdf_folder, exist_ok=True)
