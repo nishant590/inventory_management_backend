@@ -235,7 +235,7 @@ class CustomerListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        customers = Customer.objects.filter(is_active=True)
+        customers = Customer.objects.filter(is_active=True).order_by('business_name')
         customer_list = [
             {
                 "customer_id": customer.customer_id,
@@ -468,7 +468,7 @@ class VendorListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        vendors = Vendor.objects.filter(is_active=True)
+        vendors = Vendor.objects.filter(is_active=True).order_by('business_name')
         vendor_list = [
             {
                 "vendor_id": vendor.vendor_id,
