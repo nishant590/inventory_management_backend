@@ -34,7 +34,28 @@ class AddAccountAPI(APIView):
                 )
 
             # Validate account type
-            valid_account_types = ['asset', 'liability', 'equity', 'income', 'expense']
+            valid_account_types = ['cash',
+                    'bank',
+                    'accounts_receivable',
+                    'inventory',
+                    'fixed_assets',
+                    'other_current_assets',
+                    'accounts_payable',
+                    'tax_payable',
+                    'credit_card',
+                    'current_liabilities',
+                    'long_term_liabilities',
+                    'owner_equity',
+                    'retained_earnings',
+                    'sales_income',
+                    'service_income',
+                    'other_income',
+                    'cost_of_goods_sold',
+                    'operating_expenses',
+                    'payroll_expenses',
+                    'marketing_expenses',
+                    'administrative_expenses',
+                    'other_expenses']
             if account_type not in valid_account_types:
                 log.app.error("Invalid account type provided")
                 return Response(
