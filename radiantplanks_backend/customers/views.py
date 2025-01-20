@@ -816,7 +816,7 @@ class GetContractorTransactions(APIView):
             vendor_id = request.GET.get('vendor_id', None)
             contractor_payments = VendorPaymentDetails.objects.filter(
                 vendor__is_contractor=True, 
-                payment_method__in=['cash', 'cheque', 'bank_transfer']
+                payment_method__in=['frost_bank','cash', 'check', 'debit_credit_card']
             ).select_related('vendor')
 
             if vendor_id:
