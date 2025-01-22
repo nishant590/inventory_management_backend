@@ -262,12 +262,14 @@ class BalanceSheetView(APIView):
                     account=account,
                     transaction__date__gte=start_date,
                     transaction__date__lte=end_date,
-                    transaction__is_active=True
+                    transaction__is_active=True,
+                    is_active=True
                 )
             else:
                 transaction_lines = TransactionLine.objects.filter(
                     account=account,
-                    transaction__is_active=True
+                    transaction__is_active=True,
+                    is_active=True
                 )
             debit_sum = transaction_lines.aggregate(Sum('debit_amount'))['debit_amount__sum'] or Decimal('0.00')
             credit_sum = transaction_lines.aggregate(Sum('credit_amount'))['credit_amount__sum'] or Decimal('0.00')
@@ -290,7 +292,7 @@ class BalanceSheetView(APIView):
                 total_assets += balance
 
         # Liability Accounts
-        liability_types = ['accounts_payable', 'credit_card', 'current_liabilities', 'long_term_liabilities']
+        liability_types = ['accounts_payable', 'credit_card', 'current_liabilities', 'long_term_liabilities', 'tax_payable']
         liabilities = []
         total_liabilities = Decimal('0.00')
 

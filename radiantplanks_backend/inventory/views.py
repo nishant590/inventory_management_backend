@@ -283,8 +283,6 @@ def delete_invoice_transaction(invoice_id, user):
                 transaction = mapping.transaction
                 # Mark transaction as inactive
                 transaction.is_active = False
-                transaction.updated_by = user
-                transaction.updated_date = datetime.now()
                 transaction.save()
 
                 # Reverse account balances for related transaction lines
@@ -834,9 +832,6 @@ class ProductCreateView(APIView):
 
         # Calculate tile area
 
-        # Prevent duplicate product names
-        if Product.objects.filter(product_name=product_name, is_active=True).exists():
-            return Response({"detail": "Product with this name already exists."}, status=status.HTTP_400_BAD_REQUEST)
         
         if Product.objects.filter(sku=sku, is_active=True).exists():
             return Response({"detail": "Product with this SKU already exists."}, status=status.HTTP_400_BAD_REQUEST)
@@ -1377,7 +1372,206 @@ class RetrieveInvoiceView(APIView):
             log.trace.trace(f"Error retrieving invoice {traceback.format_exc()}", exc_info=True)
             return Response({"detail": "Error retrieving invoice."}, status=status.HTTP_400_BAD_REQUEST)
 
+
+class UpdateInvoiceView(APIView):
+    def get_user_from_token(self, request):
+        token = request.headers.get("Authorization", "").split(" ")[1]
+        try:
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+            user_id = payload.get("user_id")
+            return NewUser.objects.get(id=user_id)
+        except (jwt.ExpiredSignatureError, jwt.DecodeError, NewUser.DoesNotExist):
+            return None
+    def put(self, request, invoice_id):
+        data = request.data
+        user = self.get_user_from_token(request)
+        updated_items = data.get("items", [])  # List of { product_id, quantity, unit_price, unit_type }
+        if isinstance(updated_items, str):  # Convert JSON string to dict if received as a string
+            updated_items = json.loads(updated_items)
+
+        try:
+            with transaction.atomic():
+                # Fetch the existing invoice
+                invoice = Invoice.objects.get(id=invoice_id, is_active=True)
+                original_items = InvoiceItem.objects.filter(invoice=invoice)
+
+                # Create a mapping of product_id to original quantities for comparison
+                original_product_map = {item.product.id: item.quantity for item in original_items}
+                customer_id = data.get("customer_id")
+                customer = Customer.objects.get(customer_id=customer_id)
+                invoice.customer = customer
+                invoice.customer_email = data.get("customer_email", invoice.customer_email)
+                invoice.customer_email_cc = data.get("customer_email_cc", invoice.customer_email_cc)
+                invoice.customer_email_bcc = data.get("customer_email_bcc", invoice.customer_email_bcc)
+                invoice.billing_address_street_1 = data.get("billing_address_street_1", invoice.billing_address_street_1)
+                invoice.billing_address_street_2 = data.get("billing_address_street_2", invoice.billing_address_street_2)
+                invoice.billing_address_city = data.get("billing_address_city", invoice.billing_address_city)
+                invoice.billing_address_state = data.get("billing_address_state", invoice.billing_address_state)
+                invoice.billing_address_country = data.get("billing_address_country", invoice.billing_address_country)
+                invoice.billing_address_postal_code = data.get("billing_address_postal_code", invoice.billing_address_postal_code)
+                invoice.shipping_address_street_1 = data.get("shipping_address_street_1", invoice.shipping_address_street_1)
+                invoice.shipping_address_street_2 = data.get("shipping_address_street_2", invoice.shipping_address_street_2)
+                invoice.shipping_address_city = data.get("shipping_address_city", invoice.shipping_address_city)
+                invoice.shipping_address_state = data.get("shipping_address_state", invoice.shipping_address_state)
+                invoice.shipping_address_country = data.get("shipping_address_country", invoice.shipping_address_country)
+                invoice.shipping_address_postal_code = data.get("shipping_address_postal_code", invoice.shipping_address_postal_code)
+                invoice.tags = data.get("tags", invoice.tags)
+                invoice.terms = data.get("terms", invoice.terms)
+                invoice.bill_date = data.get("bill_date", invoice.bill_date)
+                invoice.due_date = data.get("due_date", invoice.due_date)
+                invoice.sum_amount = float(data.get("sum_amount", invoice.sum_amount))
+                invoice.is_taxed = data.get("is_taxed", invoice.is_taxed)
+                invoice.tax_percentage = float(data.get("tax_percentage", invoice.tax_percentage))
+                invoice.tax_amount = float(data.get("tax_amount", invoice.tax_amount))
+                invoice.total_amount = float(data.get("total_amount", invoice.total_amount))
+                invoice.message_on_invoice = data.get("message_on_invoice", invoice.message_on_invoice)
+                invoice.message_on_statement = data.get("message_on_statement", invoice.message_on_statement)
+
+                # Process updated items
+                for item_data in updated_items:
+                    product_id = item_data['product_id']
+                    new_quantity = float(item_data['quantity'])
+                    unit_price = float(item_data['unit_price'])
+                    unit_type = item_data['unit_type']
+
+                    product = Product.objects.get(id=product_id)
+
+                    # Convert new quantity to tiles based on the unit type
+                    if unit_type == 'pallet':
+                        quantity_in_tiles = new_quantity * 55
+                    elif unit_type == 'box':
+                        quantity_in_tiles = new_quantity
+                    elif unit_type == 'sqf':
+                        quantity_in_tiles = math.ceil(float(new_quantity) / float(product.tile_area))
+                    else:
+                        quantity_in_tiles = new_quantity  # Assume 'box' is the base unit
+
+                    # Check if product exists in the original invoice
+                    if product_id in original_product_map:
+                        original_quantity = original_product_map[product_id]
+
+                        # Compare and adjust inventory
+                        if quantity_in_tiles > original_quantity:
+                            # More quantity requested; deduct the extra amount
+                            extra_needed = quantity_in_tiles - original_quantity
+                            if product.stock_quantity < extra_needed:
+                                return Response({"detail": f"Insufficient stock for product {product.product_name}."},
+                                                status=status.HTTP_400_BAD_REQUEST)
+                            product.stock_quantity -= extra_needed
+                        elif quantity_in_tiles < original_quantity:
+                            # Less quantity requested; return the extra amount to inventory
+                            extra_returned = original_quantity - quantity_in_tiles
+                            product.stock_quantity += extra_returned
+                        product.save()
+
+                        # Update existing invoice item
+                        invoice_item = InvoiceItem.objects.get(invoice=invoice, product=product)
+                        invoice_item.quantity = quantity_in_tiles
+                        invoice_item.unit_price = unit_price
+                        invoice_item.save()
+
+                        # Remove from the original_product_map after processing
+                        del original_product_map[product_id]
+                    else:
+                        # New product in the updated invoice; deduct its quantity
+                        if product.stock_quantity < quantity_in_tiles:
+                            return Response({"detail": f"Insufficient stock for new product {product.product_name}."},
+                                            status=status.HTTP_400_BAD_REQUEST)
+                        product.stock_quantity -= quantity_in_tiles
+                        product.save()
+
+                        # Add new invoice item
+                        InvoiceItem.objects.create(
+                            invoice=invoice,
+                            product=product,
+                            description=item_data.get("description", ""),
+                            quantity=quantity_in_tiles,
+                            unit_price=unit_price,
+                            created_by=request.user
+                        )
+
+                # Handle products removed from the updated items
+                for removed_product_id, removed_quantity in original_product_map.items():
+                    product = Product.objects.get(id=removed_product_id)
+                    product.stock_quantity += removed_quantity
+                    product.save()
+
+                    # Remove the invoice item
+                    InvoiceItem.objects.get(invoice=invoice, product=product).delete()
+
+                # Update invoice details
+                invoice.sum_amount = sum(float(item['quantity']) * float(item['unit_price']) for item in updated_items)
+                invoice.total_amount = invoice.sum_amount + invoice.tax_amount
+                invoice.updated_by = request.user
+                invoice.updated_date = timezone.now()
+                invoice.save()
+
+                audit_log(user=request.user,
+                          action="Invoice updated",
+                          ip_add=request.META.get('HTTP_X_FORWARDED_FOR'),
+                          model_name="Invoice",
+                          record_id=invoice.id)
+                log.audit.success(f"Invoice updated successfully | {invoice.id} | {request.user}")
+                return Response({"invoice_id": invoice.id, "message": "Invoice updated successfully."},
+                                status=status.HTTP_200_OK)
+
+        except Exception as e:
+            log.trace.trace(f"Error occurred while updating invoice {traceback.format_exc()}")
+            return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
         
+class FinalizeInvoiceView(APIView):
+    def get_user_from_token(self, request):
+        token = request.headers.get("Authorization", "").split(" ")[1]
+        try:
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+            user_id = payload.get("user_id")
+            return NewUser.objects.get(id=user_id)
+        except (jwt.ExpiredSignatureError, jwt.DecodeError, NewUser.DoesNotExist):
+            return None
+    
+    def patch(self, request, invoice_id):
+        try:
+            user = self.get_user_from_token(request)
+            if not user:
+                return Response({"detail": "Invalid user token."}, status=status.HTTP_401_UNAUTHORIZED)
+            invoice = Invoice.objects.get(id=invoice_id, is_active=True)
+            if not invoice:
+                return Response({"detail": "Invoice not found or inactive."}, status=status.HTTP_404_NOT_FOUND)
+            invoice_items = InvoiceItem.objects.filter(invoice=invoice)
+            if not invoice_items:
+                return Response({"detail": "No items found in the invoice."}, status=status.HTTP_400_BAD_REQUEST)
+            customer = invoice.customer.customer_id
+            total_amount = invoice.total_amount
+            tax_amount = invoice.tax_amount
+            transaction_products = []
+            service_products = []  
+            for item in invoice_items:
+                product = Product.objects.get(id=item.product.id)
+                quantity = float(item.quantity)
+                unit_price = float(item.unit_price)
+                if product.product_type == "product":
+                    transaction_products.append({'quantity': quantity, 
+                                                "product_name": product.product_name,
+                                                "unit_price": unit_price,
+                                                "unit_cost": product.purchase_price})
+                elif product.product_type == 'service':
+                    line_total = unit_price
+                    service_products.append({'product_name': product.product_name,
+                                                'unit_price': line_total})
+            invoice_transactions = create_invoice_transaction(customer=customer, invoice_id=invoice.id, 
+                                products=transaction_products, 
+                                total_amount=total_amount, 
+                                tax_amount=tax_amount, 
+                                service_products=service_products,
+                                user=user)
+            if not invoice_transactions:
+                return Response({"detail": "Transaction Failed"}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            log.trace.trace(f"Error occurred while finalizing invoice {traceback.format_exc()}")
+            return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 class InvoicePaidView(APIView):
     def get_user_from_token(self, request):
         token = request.headers.get("Authorization", "").split(" ")[1]
@@ -2207,35 +2401,36 @@ class CreateBillView(APIView):
                 # Process each item in the invoice
                 inv_total_amount = 0
                 transaction_products = []
+                service_products = []
                 for item_data in items:
                     product = Product.objects.get(id=item_data['product_id'])
-                    quantity = float(item_data['quantity'])
-                    unit_price = float(item_data['unit_price'])
-                    unit_type = item_data['unit_type']  # Can be 'tile', 'box', or 'pallet'
-                    description = item_data.get("description","")  # Can be 'tile', 'box', or 'pallet'
-                    
-                    # Convert quantity to tiles based on the unit type
-                    if unit_type == 'pallet':
-                        quantity_in_tiles = quantity * 55
-                    elif unit_type == 'box':
-                        quantity_in_tiles = quantity
-                    elif unit_type == 'sqf':
-                        quantity_in_tiles = math.ceil(float(quantity) / float(product.tile_area))  # Calculate approx tiles for sqf
-                    else:
-                        quantity_in_tiles = quantity  # Assume 'box' is the base unit
+                    if product.product_type == "product":
+                        quantity = float(item_data['quantity'])
+                        unit_price = float(item_data['unit_price'])
+                        unit_type = item_data['unit_type']  # Can be 'tile', 'box', or 'pallet'
+                        description = item_data.get("description","")  # Can be 'tile', 'box', or 'pallet'
+                        
+                        # Convert quantity to tiles based on the unit type
+                        if unit_type == 'pallet':
+                            quantity_in_tiles = quantity * 55
+                        elif unit_type == 'box':
+                            quantity_in_tiles = quantity
+                        elif unit_type == 'sqf':
+                            quantity_in_tiles = math.ceil(float(quantity) / float(product.tile_area))  # Calculate approx tiles for sqf
+                        else:
+                            quantity_in_tiles = quantity  # Assume 'box' is the base unit
 
-                    # Check if enough stock is available
-                    # if product.stock_quantity < quantity_in_tiles:
-                    #     return Response({"detail": f"Insufficient stock for product {product.product_name}."}, status=status.HTTP_400_BAD_REQUEST)
-
-                    # Deduct stock and calculate the line total
-                    product.stock_quantity += quantity_in_tiles
-                    product.save()
-                    line_total = unit_price * quantity_in_tiles
-
-                    transaction_products.append({'quantity': quantity_in_tiles, 
-                                                  "product_name": product.product_name,
-                                                  "unit_price": unit_price})
+                        # Deduct stock and calculate the line total
+                        product.stock_quantity += quantity_in_tiles
+                        transaction_products.append({'quantity': quantity_in_tiles, 
+                                                    "product_name": product.product_name,
+                                                    "unit_price": unit_price})
+                        product.save()
+                        line_total = unit_price * quantity_in_tiles
+                    elif product.product_type == 'service':
+                        line_total = unit_price
+                        service_products.append({'product_name': product.product_name,
+                                                    'unit_price': line_total})                        
 
                     # Create invoice item
                     BillItems.objects.create(
