@@ -2428,7 +2428,10 @@ class CreateBillView(APIView):
                         product.save()
                         line_total = unit_price * quantity_in_tiles
                     elif product.product_type == 'service':
-                        line_total = unit_price
+                        quantity = float(item_data['quantity'])
+                        unit_price = float(item_data['unit_price'])
+                        line_total = 0
+                        quantity_in_tiles = 1
                         service_products.append({'product_name': product.product_name,
                                                     'unit_price': line_total})                        
 
