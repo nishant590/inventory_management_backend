@@ -1908,8 +1908,9 @@ class SendInvoiceView(APIView):
                 {
                     "product_image": os.path.join(settings.BASE_DIR, item.product.images) if item.product.images else None,
                     "product": item.product.product_name,
+                    "product_type": item.product.product_type,
                     "sku": item.product.sku,
-                    "dim": f"{item.product.tile_length} x {item.product.tile_width}" if item.product.tile_length and item.product.tile_width else "-",
+                    "dim": f'{round(item.product.tile_width)}" x {round(item.product.tile_length)}"' if item.product.tile_length and item.product.tile_width else "-",
                     "quantity": item.quantity,
                     "unit_type": "box",
                     "unit_price": item.unit_price,
@@ -2430,6 +2431,7 @@ class CreateBillView(APIView):
                     elif product.product_type == 'service':
                         quantity = float(item_data['quantity'])
                         unit_price = float(item_data['unit_price'])
+                        description = item_data.get("description","")
                         line_total = 0
                         quantity_in_tiles = 1
                         service_products.append({'product_name': product.product_name,
