@@ -192,11 +192,11 @@ class AccountReceivablesSingleView(APIView):
         try:
             # Fetch data from the database directly as a queryset
             receivables = ReceivableTracking.objects.filter(customer=customer_id).values(
-                "customer__business_name", "receivable_amount"
+                "customer__business_name", "receivable_amount", "advance_payment"
             )
             
             # Convert the queryset to a pandas DataFrame
-            df = pd.DataFrame.from_records(receivables, columns=["customer__business_name", "receivable_amount"])
+            df = pd.DataFrame.from_records(receivables, columns=["customer__business_name", "receivable_amount", "advance_payment"])
             
             if df.empty:
                 # Handle empty table scenario
@@ -247,11 +247,11 @@ class AccountPayableView(APIView):
         try:
             # Fetch data from the database directly as a queryset
             payables = PayableTracking.objects.values(
-                "vendor__business_name", "payable_amount"
+                "vendor__business_name", "payable_amount", "advance_payment"
             )
             
             # Convert the queryset to a pandas DataFrame
-            df = pd.DataFrame.from_records(payables, columns=["vendor__business_name", "payable_amount"])
+            df = pd.DataFrame.from_records(payables, columns=["vendor__business_name", "payable_amount", "advance_payment"])
             
             if df.empty:
                 # Handle empty table scenario
