@@ -187,11 +187,120 @@ class AccountReceivablesView(APIView):
             )
     
 
-class AccountPayablesView(APIView):
+class AccountReceivablesSingleView(APIView):
+    def get(self, request, customer_id):
+        try:
+            # Fetch data from the database directly as a queryset
+            receivables = ReceivableTracking.objects.filter(customer=customer_id).values(
+                "customer__business_name", "receivable_amount"
+            )
+            
+            # Convert the queryset to a pandas DataFrame
+            df = pd.DataFrame.from_records(receivables, columns=["customer__business_name", "receivable_amount"])
+            
+            if df.empty:
+                # Handle empty table scenario
+                return Response(
+                    {
+                        "data": [],
+                        "overall_receivable": 0,
+                    },
+                    status=status.HTTP_200_OK,
+                )
+            
+            # Rename columns for a clean response
+            df.rename(columns={"customer__business_name": "customer"}, inplace=True)
+            
+            # Calculate overall receivable amount
+            overall_receivable = df["receivable_amount"].sum()
+            
+            # Convert DataFrame back to a dictionary
+            receivables_data = df.to_dict(orient="records")
+            audit_log_entry = audit_log(user=request.user,
+                              action="Receivable Reports viewed", 
+                              ip_add=request.META.get('HTTP_X_FORWARDED_FOR'), 
+                              model_name="ReceivableTracking", 
+                              record_id=0)
+            
+            return Response(
+                {
+                    "data": receivables_data,
+                    "overall_receivable": overall_receivable,
+                },
+                status=status.HTTP_200_OK,
+            )
+        
+        except Exception as e:
+            log.trace.trace(f"Error while fetching receivables data, {traceback.format_exc()}")
+            # Handle unexpected errors
+            return Response(
+                {
+                    "detail": "An error occurred while processing the request.",
+                    "error": str(e),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+
+class AccountPayableView(APIView):
     def get(self, request):
         try:
             # Fetch data from the database directly as a queryset
             payables = PayableTracking.objects.values(
+                "vendor__business_name", "payable_amount"
+            )
+            
+            # Convert the queryset to a pandas DataFrame
+            df = pd.DataFrame.from_records(payables, columns=["vendor__business_name", "payable_amount"])
+            
+            if df.empty:
+                # Handle empty table scenario
+                return Response(
+                    {
+                        "data": [],
+                        "overall_payables": 0,
+                    },
+                    status=status.HTTP_200_OK,
+                )
+            
+            # Rename columns for a clean response
+            df.rename(columns={"vendor__business_name": "vendor"}, inplace=True)
+            
+            # Calculate overall receivable amount
+            overall_receivable = df["payable_amount"].sum()
+            
+            # Convert DataFrame back to a dictionary
+            payables_data = df.to_dict(orient="records")
+            audit_log_entry = audit_log(user=request.user,
+                              action="Payable Reports viewed", 
+                              ip_add=request.META.get('HTTP_X_FORWARDED_FOR'), 
+                              model_name="PayableTracking", 
+                              record_id=0)
+            return Response(
+                {
+                    "data": payables_data,
+                    "overall_payable": overall_receivable,
+                },
+                status=status.HTTP_200_OK,
+            )
+        
+        except Exception as e:
+            log.trace.trace(f"Error while fetching payables data, {traceback.format_exc()}")
+            # Handle unexpected errors
+            return Response(
+                {
+                    "detail": "An error occurred while processing the request.",
+                    "error": str(e),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+
+class AccountPayableSingleView(APIView):
+    def get(self, request, vendor_id):
+        try:
+            # Fetch data from the database directly as a queryset
+            payables = PayableTracking.objects.filter(vendor=vendor_id).values(
                 "vendor__business_name", "payable_amount"
             )
             
