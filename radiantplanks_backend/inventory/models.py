@@ -92,7 +92,7 @@ class ProductAccountMapping(models.Model):
 class Invoice(models.Model):
     PAYMENT_STATUS_CHOICES = (
         ("unpaid", "Unpaid"),
-        ("partially paid", "Partially Paid"),
+        ("partially_paid", "Partially Paid"),
         ("paid", "Paid"),
     )
     customer = models.ForeignKey(Customer, on_delete=models.CASCADE)

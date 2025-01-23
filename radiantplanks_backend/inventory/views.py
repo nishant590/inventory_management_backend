@@ -351,7 +351,7 @@ def delete_invoice_transaction(invoice_id, user):
         return False
 
 
-def create_bill_transaction(bill_id, vendor, products, total_amount, user):
+def create_bill_transaction(bill_id, vendor, products, services, total_amount, user):
     """
     Adjust inventory and create accounts payable for the bill.
     If paid, do not increase accounts payable and reduce bank balance.
@@ -359,7 +359,7 @@ def create_bill_transaction(bill_id, vendor, products, total_amount, user):
     try:
         inventory_account = Account.objects.get(account_type='inventory')  # Inventory account
         payable_account = Account.objects.get(account_type='accounts_payable')  # Accounts Payable account
-
+        cogs_account = Account.objects.get(account_type='cost_of_goods_sold')
         # Create a new transaction
         transaction = Transaction.objects.create(
             reference_number=f"BILL-{uuid.uuid4().hex[:6].upper()}",
@@ -370,6 +370,7 @@ def create_bill_transaction(bill_id, vendor, products, total_amount, user):
         )
 
         inv_total_cost = 0
+        services_total_cost = 0
 
         # Adjust inventory and handle accounts payable
         for product in products:
@@ -388,6 +389,18 @@ def create_bill_transaction(bill_id, vendor, products, total_amount, user):
                 credit_amount=0,
             )
 
+        for service in services:
+            service_name = service.get("service_name")
+            temp_total_cost = Decimal(service.get("unit_price"))
+            
+            TransactionLine.objects.create(
+                transaction=transaction,
+                account=cogs_account,
+                description=f"Service addition for {service_name}",
+                debit_amount=temp_total_cost,
+                credit_amount=0)
+            services_total_cost += temp_total_cost
+            
         # Add payable (credit accounts payable account)
         TransactionLine.objects.create(
             transaction=transaction,
@@ -413,6 +426,7 @@ def create_bill_transaction(bill_id, vendor, products, total_amount, user):
             payment_amount=total_amount,
         )
         inventory_account.balance += Decimal(inv_total_cost)
+        cogs_account.balance += Decimal(services_total_cost)
         payable_account.balance += Decimal(total_amount)
         BillTransactionMapping.objects.create(
             transaction=transaction,
@@ -1306,6 +1320,34 @@ class ListInvoicesView(APIView):
 
         invoices = Invoice.objects.filter(is_active=True).values(
             "id", "customer__business_name", "customer__customer_id",  "customer_email", "customer__mobile_number", "total_amount", "unpaid_amount", "bill_date", "due_date", "payment_status"
+        )
+        invoice_list = list(invoices)  # Convert queryset to list of dicts
+        return Response(invoice_list, status=status.HTTP_200_OK)
+
+
+class ListCustomerInvoicesView(APIView):
+    def get_user_from_token(self, request):
+        token = request.headers.get("Authorization", "").split(" ")[1]
+        try:
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+            user_id = payload.get("user_id")
+            return NewUser.objects.get(id=user_id)
+        except (jwt.ExpiredSignatureError, jwt.DecodeError, NewUser.DoesNotExist):
+            return None
+
+    def get(self, request, customer_id):
+        user = self.get_user_from_token(request)
+        if not user:
+            return Response({"detail": "Invalid or expired token."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        invoices = Invoice.objects.filter(
+            customer=customer_id, 
+            payment_status__in=["unpaid","partially_paid"],
+            is_active=True).values(
+            "id", "customer__business_name", "customer__customer_id",  
+            "customer_email", "customer__mobile_number", 
+            "total_amount", "unpaid_amount", "bill_date", "paid_amount", 
+            "due_date", "payment_status"
         )
         invoice_list = list(invoices)  # Convert queryset to list of dicts
         return Response(invoice_list, status=status.HTTP_200_OK)
@@ -2434,8 +2476,8 @@ class CreateBillView(APIView):
                         description = item_data.get("description","")
                         line_total = 0
                         quantity_in_tiles = 1
-                        service_products.append({'product_name': product.product_name,
-                                                    'unit_price': line_total})                        
+                        service_products.append({'service_name': product.product_name,
+                                                    'unit_price': unit_price})                        
 
                     # Create invoice item
                     BillItems.objects.create(
@@ -2452,7 +2494,7 @@ class CreateBillView(APIView):
 
                 # Update the invoice's total amount after processing all items
                 # invoice.total_amount = total_amount
-                bill_payment = create_bill_transaction(bill_id=bill.id, vendor=vendor, products=transaction_products,
+                bill_payment = create_bill_transaction(bill_id=bill.id, vendor=vendor, products=transaction_products, services=service_products,
                                                        total_amount=total_amount, user=request.user)
                 bill.save()
 
@@ -2486,6 +2528,33 @@ class ListBillsView(APIView):
 
         bills = Bill.objects.filter(is_active=True).values("id",
             "bill_number", "vendor__business_name", "vendor__vendor_id", "vendor__email", "total_amount", "unpaid_amount", "bill_date", "due_date", "payment_status"
+        )
+        bill_list = list(bills)  # Convert queryset to list of dicts
+        return Response(bill_list, status=status.HTTP_200_OK)
+
+
+class ListVendorBillsView(APIView):
+    def get_user_from_token(self, request):
+        token = request.headers.get("Authorization", "").split(" ")[1]
+        try:
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+            user_id = payload.get("user_id")
+            return NewUser.objects.get(id=user_id)
+        except (jwt.ExpiredSignatureError, jwt.DecodeError, NewUser.DoesNotExist):
+            return None
+
+    def get(self, request, vendor_id):
+        user = self.get_user_from_token(request)
+        if not user:
+            return Response({"detail": "Invalid or expired token."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        bills = Bill.objects.filter(vendor=vendor_id, 
+                                    payment_status__in=["unpaid","partially_paid"], 
+                                    is_active=True).values("id",
+            "bill_number", "vendor__business_name", 
+            "vendor__vendor_id", "vendor__email", 
+            "total_amount", "unpaid_amount", "paid_amount",
+            "bill_date", "due_date", "payment_status"
         )
         bill_list = list(bills)  # Convert queryset to list of dicts
         return Response(bill_list, status=status.HTTP_200_OK)
