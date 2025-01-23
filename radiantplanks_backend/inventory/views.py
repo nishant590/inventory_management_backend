@@ -728,6 +728,7 @@ class ProductListView(APIView):
                 "product_description": product.purchase_description,
                 "category": product.category_id.name if product.category_id else None,
                 "sku": product.sku,
+                "product_barcode": product.barcode,
                 "product_length": product.tile_length,
                 "product_width": product.tile_width,
                 "stock_quantity": product.stock_quantity,
@@ -735,6 +736,7 @@ class ProductListView(APIView):
             for product in products
         ]
         return Response(products_data, status=status.HTTP_200_OK)
+
 
 # Product Views
 class ProductCreateView(APIView):
