@@ -1,7 +1,7 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from .models import Account, ReceivableTracking, Transaction, TransactionLine, PayableTracking
+from .models import Account, ReceivableTracking, Transaction, TransactionLine, PayableTracking, OwnerPaymentDetails
 from django.core.exceptions import ValidationError
 from django.db.models import Sum, Q
 from django.http import JsonResponse
@@ -702,6 +702,9 @@ class OwnerContributionAPI(APIView):
             source_account_code = data.get('source_account')  # e.g., 'cash' or 'bank'
             description = data.get('description', 'Owner Contribution')
             contribution_date = data.get('date', now().date())
+            transaction_reference = data.get('transaction_reference', None)
+            payment_method = data.get('payment_method', 'cash')
+
 
             if amount <= 0: 
                 return Response({"error": "Amount must be greater than zero."}, status=status.HTTP_400_BAD_REQUEST)
@@ -736,6 +739,15 @@ class OwnerContributionAPI(APIView):
                     description=f"Credit {description}"
                 )
 
+                owner_entry = OwnerPaymentDetails.objects.create(
+                    transaction=transaction_entry,
+                    amount=amount,
+                    description=description,
+                    transaction_reference_id=transaction_reference,
+                    payment_method=payment_method,
+                    payment_amount=amount,
+                    payment_date=contribution_date)
+
                 # Update account balances
                 source_account.balance += amount
                 source_account.save()
@@ -743,11 +755,105 @@ class OwnerContributionAPI(APIView):
                 owner_equity_account.balance += amount
                 owner_equity_account.save()
 
+            audit_log_entry = audit_log(user=request.user,
+                              action="Owner Contribution recorded", 
+                              ip_add=request.META.get('HTTP_X_FORWARDED_FOR'), 
+                              model_name="OwnerPaymentDetails", 
+                              record_id=owner_entry.id)
+
             return Response({
                 "message": "Owner contribution recorded successfully.",
                 "transaction_id": transaction_entry.id,
                 "source_account_balance": source_account.balance,
                 "owner_equity_balance": owner_equity_account.balance
+            }, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class GetAllOwnerTransactionsAPI(APIView):
+    def get(self, request):
+        transactions = OwnerPaymentDetails.objects.all()
+        transaction_data = []
+        for transaction in transactions:
+            transaction_data.append({
+                'id': transaction.id,
+                'amount': transaction.amount,
+                'description': transaction.description,
+                'transaction_reference_id': transaction.transaction_reference_id,
+                'payment_method': transaction.payment_method,
+                'payment_date': transaction.payment_date,
+                # Add other fields as needed
+            })
+        return Response(transaction_data)
+    
+
+class OwnerTakeOutMoneyAPI(APIView):
+    def post(self, request):
+        data = request.data
+        try:
+            amount = Decimal(data.get('amount', 0))
+            destination_account_code = data.get('destination_account')  # e.g., 'cash' or 'bank'
+            description = data.get('description', 'Owner Money Withdrawal')
+            withdrawal_date = data.get('date', now().date())
+            transaction_reference = data.get('transaction_reference', None)
+            payment_method = data.get('payment_method', 'cash')
+
+            if amount <= 0:
+                return Response({"error": "Amount must be greater than zero."}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Fetch accounts
+            owner_equity_account = get_object_or_404(Account, code='OWN-001', is_active=True)
+            destination_account = get_object_or_404(Account, code=destination_account_code, is_active=True)
+
+            if owner_equity_account.balance < amount:
+                return Response({"error": "Insufficient funds in owner equity account."}, status=status.HTTP_400_BAD_REQUEST)
+
+            with transaction.atomic():
+                # Create the transaction
+                transaction_entry = Transaction.objects.create(
+                    reference_number=f"OW-{Transaction.objects.count() + 1}",
+                    transaction_type='journal',
+                    date=withdrawal_date,
+                    description=description,
+                    created_by=request.user,
+                )
+
+                # Create transaction lines
+                TransactionLine.objects.create(
+                    transaction=transaction_entry,
+                    account=owner_equity_account,
+                    debit_amount=amount,
+                    credit_amount=0,
+                    description=f"Debit {description}"
+                )
+                TransactionLine.objects.create(
+                    transaction=transaction_entry,
+                    account=destination_account,
+                    debit_amount=0,
+                    credit_amount=amount,
+                    description=f"Credit {description}"
+                )
+
+                # Update account balances
+                owner_equity_account.balance -= amount
+                owner_equity_account.save()
+
+                destination_account.balance -= amount
+                destination_account.save()
+
+            audit_log_entry = audit_log(user=request.user,
+                              action="Owner Money Withdrawal recorded", 
+                              ip_add=request.META.get('HTTP_X_FORWARDED_FOR'), 
+                              model_name="OwnerPaymentDetails", 
+                              record_id=transaction_entry.id)
+
+            return Response({
+                "message": "Owner money withdrawal recorded successfully.",
+                "transaction_id": transaction_entry.id,
+                "source_account_balance": owner_equity_account.balance,
+                "destination_account_balance": destination_account.balance
             }, status=status.HTTP_201_CREATED)
 
         except Exception as e:
