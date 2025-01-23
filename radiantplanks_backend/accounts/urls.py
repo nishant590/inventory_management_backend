@@ -9,7 +9,8 @@ from .views import (AddAccountAPI,
                     AccountReceivablesSingleView, 
                     BalanceSheetView,
                     ProfitLossStatementView,
-                    ProfitLossStatementCustomerView)
+                    ProfitLossStatementCustomerView,
+                    OwnerContributionAPI)
 
 urlpatterns = [
     path('accounts/create/', AddAccountAPI.as_view(), name='add_account'),
@@ -24,4 +25,5 @@ urlpatterns = [
     path('balancesheet/', BalanceSheetView.as_view(), name='balancesheet'),
     path('profitandloss/', ProfitLossStatementView.as_view(), name='profitandloss'),
     path('profitandloss-customer/', ProfitLossStatementCustomerView.as_view(), name='profitandloss-customer'),
+    path('owner-contribution/', OwnerContributionAPI.as_view(), name='owner-contribution'),
 ]

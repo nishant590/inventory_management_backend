@@ -13,6 +13,10 @@ from radiantplanks_backend.logging import log
 import traceback
 from authentication.views import audit_log
 from datetime import datetime 
+from django.shortcuts import get_object_or_404
+from django.db import transaction
+from django.utils.timezone import now
+
 
 
 class AddAccountAPI(APIView):
@@ -688,3 +692,63 @@ class AccountsPayableAPIView(APIView):
         except Exception as e:
             log.trace.trace(f"Error getting payables {traceback.format_exc()}")
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class OwnerContributionAPI(APIView):
+    def post(self, request):
+        data = request.data
+        try:
+            amount = Decimal(data.get('amount', 0))
+            source_account_code = data.get('source_account')  # e.g., 'cash' or 'bank'
+            description = data.get('description', 'Owner Contribution')
+            contribution_date = data.get('date', now().date())
+
+            if amount <= 0: 
+                return Response({"error": "Amount must be greater than zero."}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Fetch accounts
+            source_account = get_object_or_404(Account, code=source_account_code, is_active=True)
+            owner_equity_account = get_object_or_404(Account, code='OWN-001', is_active=True)
+
+            with transaction.atomic():
+                # Create the transaction
+                transaction_entry = Transaction.objects.create(
+                    reference_number=f"OC-{Transaction.objects.count() + 1}",
+                    transaction_type='journal',
+                    date=contribution_date,
+                    description=description,
+                    created_by=request.user,
+                )
+
+                # Create transaction lines
+                TransactionLine.objects.create(
+                    transaction=transaction_entry,
+                    account=source_account,
+                    debit_amount=amount,
+                    credit_amount=0,
+                    description=f"Debit {description}"
+                )
+                TransactionLine.objects.create(
+                    transaction=transaction_entry,
+                    account=owner_equity_account,
+                    debit_amount=0,
+                    credit_amount=amount,
+                    description=f"Credit {description}"
+                )
+
+                # Update account balances
+                source_account.balance += amount
+                source_account.save()
+
+                owner_equity_account.balance += amount
+                owner_equity_account.save()
+
+            return Response({
+                "message": "Owner contribution recorded successfully.",
+                "transaction_id": transaction_entry.id,
+                "source_account_balance": source_account.balance,
+                "owner_equity_balance": owner_equity_account.balance
+            }, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
