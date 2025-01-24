@@ -42,7 +42,7 @@ urlpatterns = [
 
     path('invoice/getid/', GetLatestInvoiceId.as_view(), name='invoice-get'),
     path('invoice/create/', CreateInvoiceView.as_view(), name='invoice-create'),
-    path('invoice/update/', UpdateInvoiceView.as_view(), name='invoice-update'),
+    path('invoice/update/<int:invoice_id>/', UpdateInvoiceView.as_view(), name='invoice-update'),
     path('invoice/finalize/', FinalizeInvoiceView.as_view(), name='invoice-finalize'),
     path('invoice/', ListInvoicesView.as_view(), name='invoice-list'),
     path('invoice/customer/<int:customer_id>/', ListCustomerInvoicesView.as_view(), name='invoice-list'),

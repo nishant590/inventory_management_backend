@@ -18,6 +18,7 @@ import posixpath
 from django.core.files.storage import FileSystemStorage
 import traceback
 from django.conf import settings
+from django.db.models import Sum, Q
 import os
 import json
 import jwt
@@ -264,6 +265,185 @@ def create_invoice_transaction(customer, invoice_id, products, total_amount, ser
         log.trace.trace(f"Error occurred: {traceback.format_exc()}")
         return False
 
+
+def update_invoice_transaction(customer, invoice_id, new_products, new_service_products, new_total_amount, new_tax_amount, user):
+    """
+    Reverse the original invoice transaction and create a new transaction with updated data.
+    Adjusts inventory, account balances, and logs new transactions.
+    """
+    try:
+        # Fetch the original transaction linked to the invoice
+        mapping = InvoiceTransactionMapping.objects.get(invoice_id=invoice_id, is_active=True)
+        original_transaction = Transaction.objects.get(id=mapping.transaction.id, is_active=True)
+        all_transaction_lines = TransactionLine.objects.filter(transaction=mapping.transaction.id, is_active=True).all()
+        original_receivable_amount = TransactionLine.objects.filter(transaction=mapping.transaction.id, account__account_type='accounts_receivable').first().debit_amount
+        # Fetch relevant accounts
+        inventory_account = Account.objects.get(account_type='inventory')
+        receivable_account = Account.objects.get(account_type='accounts_receivable')
+        cogs_account = Account.objects.get(account_type='cost_of_goods_sold')
+        sales_revenue_account = Account.objects.get(account_type='sales_income')
+        tax_account = Account.objects.get(account_type='tax_payable')
+
+        with db_transaction.atomic():
+            # Calculate original amounts from transaction lines
+            # Create reversing transaction lines and adjust accounts
+            for line in all_transaction_lines:
+                account = line.account
+                if account.account_type in ['inventory', 'accounts_receivable', "cash", "bank", "fixed_assets", "other_current_assets"]:
+                    # Reverse inventory account logic
+                    if line.debit_amount > 0:
+                        account.balance -= Decimal(line.debit_amount)
+                    if line.credit_amount > 0:
+                        account.balance += Decimal(line.credit_amount)
+                #Expense
+                elif account.account_type in ['cost_of_goods_sold', 'operating_expenses', 'payroll_expenses', 'marketing_expenses', 'administrative_expenses', 'other_expenses']:
+                    # Reverse expense account logic (COGS)
+                    if line.debit_amount > 0:
+                        account.balance -= Decimal(line.debit_amount)
+                    if line.credit_amount > 0:
+                        account.balance += Decimal(line.credit_amount)
+                #Income
+                elif account.account_type in ['sales_income', 'service_income','other_income']:
+                    # Reverse revenue account logic
+                    if line.debit_amount > 0:
+                        account.balance += Decimal(line.debit_amount)
+                    if line.credit_amount > 0:
+                        account.balance -= Decimal(line.credit_amount)
+                #Liabilities
+                elif account.account_type in ['accounts_payable', 'tax_payable', 'credit_card', 'current_liabilities', 'long_term_liabilities']:
+                    # Reverse tax account logic
+                    if line.debit_amount > 0:
+                        account.balance += Decimal(line.debit_amount)
+                    if line.credit_amount > 0:
+                        account.balance -= Decimal(line.credit_amount)
+                #Equity
+                elif account.account_type in ['owner_equity', 'retained_earnings']:
+                    # Reverse tax account logic
+                    if line.debit_amount > 0:
+                        account.balance += Decimal(line.debit_amount)
+                    if line.credit_amount > 0:
+                        account.balance -= Decimal(line.credit_amount)
+                else:
+                    # Reverse tax account logic
+                    if line.debit_amount > 0:
+                        account.balance += Decimal(line.debit_amount)
+                    if line.credit_amount > 0:
+                        account.balance -= Decimal(line.credit_amount)
+                account.save()
+                line.is_active = False
+                line.save()
+
+            # Update ReceivableTracking
+            receivable, _ = ReceivableTracking.objects.get_or_create(customer=customer)
+            receivable.receivable_amount -= original_receivable_amount
+            receivable.save()
+
+            
+            inv_total_cost = Decimal('0.00')
+            new_untaxed_amount = new_total_amount - new_tax_amount
+
+            # Process new products (goods)
+            for product in new_products:
+                product_name = product.get("product_name")
+                quantity = Decimal(product.get("quantity"))
+                unit_cost = Decimal(product.get("unit_cost"))
+                unit_price = Decimal(product.get("unit_price"))
+                total_cost = quantity * unit_cost
+                total_revenue = quantity * unit_price
+                inv_total_cost += total_cost
+
+                # Adjust inventory (credit)
+                TransactionLine.objects.create(
+                    transaction=original_transaction,
+                    account=inventory_account,
+                    description=f"Inventory adjustment for {product_name}",
+                    debit_amount=0,
+                    credit_amount=total_cost,
+                )
+
+                # Debit COGS
+                TransactionLine.objects.create(
+                    transaction=original_transaction,
+                    account=cogs_account,
+                    description=f"Cost of goods sold for {product_name}",
+                    debit_amount=total_cost,
+                    credit_amount=0,
+                )
+
+                # Credit Sales Revenue
+                TransactionLine.objects.create(
+                    transaction=original_transaction,
+                    account=sales_revenue_account,
+                    description=f"Sales revenue for {product_name}",
+                    debit_amount=0,
+                    credit_amount=total_revenue,
+                )
+
+            # Process new service products
+            for service in new_service_products:
+                service_name = service.get("product_name")
+                total_revenue = Decimal(service.get("unit_price"))
+
+                TransactionLine.objects.create(
+                    transaction=original_transaction,
+                    account=sales_revenue_account,
+                    description=f"Service Sales revenue for {service_name}",
+                    debit_amount=0,
+                    credit_amount=total_revenue,
+                )
+
+            # Handle tax
+            if new_tax_amount > 0:
+                TransactionLine.objects.create(
+                    transaction=original_transaction,
+                    account=tax_account,
+                    description=f"Tax Payable for invoice to {customer.business_name}",
+                    debit_amount=0,
+                    credit_amount=new_tax_amount,
+                )
+                tax_account.balance += Decimal(new_tax_amount)
+
+            # Update accounts receivable
+            TransactionLine.objects.create(
+                transaction=original_transaction,
+                account=receivable_account,
+                description=f"Account receivable for updated invoice to {customer.business_name}",
+                debit_amount=new_total_amount,
+                credit_amount=0,
+            )
+
+            # Update account balances with new transaction amounts
+            inventory_account.balance -= inv_total_cost
+            cogs_account.balance += inv_total_cost
+            sales_revenue_account.balance += new_untaxed_amount
+            receivable_account.balance += Decimal(new_total_amount)
+
+            # Save updated account balances
+            inventory_account.save()
+            cogs_account.save()
+            sales_revenue_account.save()
+            receivable_account.save()
+            tax_account.save()
+
+            # Update ReceivableTracking with new amount
+            receivable.receivable_amount += Decimal(new_total_amount)
+            receivable.save()
+
+
+            # Log customer payment details for the new transaction
+            update_customer_payment = CustomerPaymentDetails.objects.filter(
+                customer=customer,
+                transaction=original_transaction,
+            ).first()
+            update_customer_payment.payment_amount = new_total_amount
+
+        log.app.info("Invoice updated successfully")
+        return True
+
+    except Exception as e:
+        log.trace.trace(f"Error updating invoice: {traceback.format_exc()}")
+        return False
+    
 
 def delete_invoice_transaction(invoice_id, user):
     """
@@ -1427,17 +1607,27 @@ class UpdateInvoiceView(APIView):
         except (jwt.ExpiredSignatureError, jwt.DecodeError, NewUser.DoesNotExist):
             return None
     def put(self, request, invoice_id):
-        data = request.data
         user = self.get_user_from_token(request)
+        if not user:
+            return Response({"detail": "Invalid or expired token."}, status=status.HTTP_401_UNAUTHORIZED)
+        data = request.data
+        items = data.get("items", [])  # List of { product_id, quantity, unit_price, unit_type }
+        if isinstance(items, str):  # Convert to dictionary if received as a JSON string
+            items = json.loads(items)
         updated_items = data.get("items", [])  # List of { product_id, quantity, unit_price, unit_type }
         if isinstance(updated_items, str):  # Convert JSON string to dict if received as a string
             updated_items = json.loads(updated_items)
-
+        is_taxed = data.get("is_taxed")
+        if isinstance(is_taxed, str):
+            is_taxed = is_taxed.lower() == 'true'
         try:
             with transaction.atomic():
                 # Fetch the existing invoice
                 invoice = Invoice.objects.get(id=invoice_id, is_active=True)
                 original_items = InvoiceItem.objects.filter(invoice=invoice)
+                new_total_amount = Decimal(data.get("total_amount"))
+                new_tax_amount = Decimal(data.get("tax_amount"))
+                new_tax_percent = Decimal(data.get("tax_percentage"))
 
                 # Create a mapping of product_id to original quantities for comparison
                 original_product_map = {item.product.id: item.quantity for item in original_items}
@@ -1464,75 +1654,115 @@ class UpdateInvoiceView(APIView):
                 invoice.bill_date = data.get("bill_date", invoice.bill_date)
                 invoice.due_date = data.get("due_date", invoice.due_date)
                 invoice.sum_amount = float(data.get("sum_amount", invoice.sum_amount))
-                invoice.is_taxed = data.get("is_taxed", invoice.is_taxed)
+                invoice.is_taxed = is_taxed
                 invoice.tax_percentage = float(data.get("tax_percentage", invoice.tax_percentage))
                 invoice.tax_amount = float(data.get("tax_amount", invoice.tax_amount))
                 invoice.total_amount = float(data.get("total_amount", invoice.total_amount))
                 invoice.message_on_invoice = data.get("message_on_invoice", invoice.message_on_invoice)
                 invoice.message_on_statement = data.get("message_on_statement", invoice.message_on_statement)
 
+                updated_items = []
+                new_services = []
                 # Process updated items
-                for item_data in updated_items:
+                for item_data in items:
                     product_id = item_data['product_id']
                     new_quantity = float(item_data['quantity'])
                     unit_price = float(item_data['unit_price'])
                     unit_type = item_data['unit_type']
 
                     product = Product.objects.get(id=product_id)
+                    if product.product_type == 'product':
+                        # Convert new quantity to tiles based on the unit type
+                        if unit_type == 'pallet':
+                            quantity_in_tiles = new_quantity * 55
+                        elif unit_type == 'box':
+                            quantity_in_tiles = new_quantity
+                        elif unit_type == 'sqf':
+                            quantity_in_tiles = math.ceil(float(new_quantity) / float(product.tile_area))
+                        else:
+                            quantity_in_tiles = new_quantity  # Assume 'box' is the base unit
 
-                    # Convert new quantity to tiles based on the unit type
-                    if unit_type == 'pallet':
-                        quantity_in_tiles = new_quantity * 55
-                    elif unit_type == 'box':
-                        quantity_in_tiles = new_quantity
-                    elif unit_type == 'sqf':
-                        quantity_in_tiles = math.ceil(float(new_quantity) / float(product.tile_area))
-                    else:
-                        quantity_in_tiles = new_quantity  # Assume 'box' is the base unit
+                        # Check if product exists in the original invoice
+                        if product_id in original_product_map:
+                            original_quantity = original_product_map[product_id]
 
-                    # Check if product exists in the original invoice
-                    if product_id in original_product_map:
-                        original_quantity = original_product_map[product_id]
+                            # Compare and adjust inventory
+                            if quantity_in_tiles > original_quantity:
+                                # More quantity requested; deduct the extra amount
+                                extra_needed = quantity_in_tiles - original_quantity
+                                updated_items.append({"product_id": product_id, 
+                                                      "quantity": quantity_in_tiles, 
+                                                      "unit_price": unit_price,
+                                                      "cost_price": product.purchase_price})
+                                if product.stock_quantity < extra_needed:
+                                    return Response({"detail": f"Insufficient stock for product {product.product_name}."},
+                                                    status=status.HTTP_400_BAD_REQUEST)
+                                product.stock_quantity -= extra_needed
+                            elif quantity_in_tiles < original_quantity:
+                                # Less quantity requested; return the extra amount to inventory
+                                extra_returned = original_quantity - quantity_in_tiles
+                                updated_items.append({"product_id": product_id, 
+                                                      "quantity": quantity_in_tiles, 
+                                                      "unit_price": unit_price,
+                                                      "unit_cost": product.purchase_price})
+                                product.stock_quantity += extra_returned
+                            elif quantity_in_tiles == original_quantity:
+                                updated_items.append({"product_id": product_id, 
+                                                      "quantity": quantity_in_tiles, 
+                                                      "unit_price": unit_price,
+                                                      "unit_cost": product.purchase_price})
+                            product.save()
+                            # Update existing invoice item
+                            invoice_item = InvoiceItem.objects.get(invoice=invoice, product=product)
+                            invoice_item.quantity = quantity_in_tiles
+                            invoice_item.unit_price = unit_price
+                            invoice_item.save()
 
-                        # Compare and adjust inventory
-                        if quantity_in_tiles > original_quantity:
-                            # More quantity requested; deduct the extra amount
-                            extra_needed = quantity_in_tiles - original_quantity
-                            if product.stock_quantity < extra_needed:
-                                return Response({"detail": f"Insufficient stock for product {product.product_name}."},
+                            # Remove from the original_product_map after processing
+                            del original_product_map[product_id]
+                        else:
+                            # New product in the updated invoice; deduct its quantity
+                            if product.stock_quantity < quantity_in_tiles:
+                                return Response({"detail": f"Insufficient stock for new product {product.product_name}."},
                                                 status=status.HTTP_400_BAD_REQUEST)
-                            product.stock_quantity -= extra_needed
-                        elif quantity_in_tiles < original_quantity:
-                            # Less quantity requested; return the extra amount to inventory
-                            extra_returned = original_quantity - quantity_in_tiles
-                            product.stock_quantity += extra_returned
-                        product.save()
-
-                        # Update existing invoice item
-                        invoice_item = InvoiceItem.objects.get(invoice=invoice, product=product)
-                        invoice_item.quantity = quantity_in_tiles
-                        invoice_item.unit_price = unit_price
-                        invoice_item.save()
-
-                        # Remove from the original_product_map after processing
-                        del original_product_map[product_id]
-                    else:
-                        # New product in the updated invoice; deduct its quantity
-                        if product.stock_quantity < quantity_in_tiles:
-                            return Response({"detail": f"Insufficient stock for new product {product.product_name}."},
-                                            status=status.HTTP_400_BAD_REQUEST)
-                        product.stock_quantity -= quantity_in_tiles
-                        product.save()
-
-                        # Add new invoice item
-                        InvoiceItem.objects.create(
-                            invoice=invoice,
-                            product=product,
-                            description=item_data.get("description", ""),
-                            quantity=quantity_in_tiles,
-                            unit_price=unit_price,
-                            created_by=request.user
-                        )
+                            product.stock_quantity -= quantity_in_tiles
+                            updated_items.append({"product_id": product.id, 
+                                                  "quantity": quantity_in_tiles, 
+                                                  "unit_price": unit_price,
+                                                  "unit_cost":[+product.purchase_price]})
+                            product.save()
+                            # Add new invoice item
+                            InvoiceItem.objects.create(
+                                invoice=invoice,
+                                product=product,
+                                description=item_data.get("description", ""),
+                                quantity=quantity_in_tiles,
+                                unit_price=unit_price,
+                                created_by=request.user
+                            )
+                    elif product.product_type == "service":
+                        if product_id in original_product_map:
+                            original_quantity = original_product_map[product_id]
+                            invoice_item = InvoiceItem.objects.get(invoice=invoice, product=product)
+                            invoice_item.quantity = new_quantity
+                            invoice_item.unit_price = unit_price
+                            invoice_item.save()
+                            
+                            new_services.append({"product_name": product.product_name, "unit_price": unit_price})
+                            # Remove from the original_product_map after processing
+                            del original_product_map[product_id]
+                        else:
+                           # Add new invoice item
+                            new_services.append({'product_name': product.product_name,
+                                                    'unit_price': unit_price})
+                            InvoiceItem.objects.create(
+                                invoice=invoice,
+                                product=product,
+                                description=item_data.get("description", ""),
+                                quantity=new_quantity,
+                                unit_price=unit_price,
+                                created_by=request.user
+                            )
 
                 # Handle products removed from the updated items
                 for removed_product_id, removed_quantity in original_product_map.items():
@@ -1543,11 +1773,20 @@ class UpdateInvoiceView(APIView):
                     # Remove the invoice item
                     InvoiceItem.objects.get(invoice=invoice, product=product).delete()
 
-                # Update invoice details
+                # Update invoice details                
                 invoice.sum_amount = sum(float(item['quantity']) * float(item['unit_price']) for item in updated_items)
                 invoice.total_amount = invoice.sum_amount + invoice.tax_amount
                 invoice.updated_by = request.user
                 invoice.updated_date = timezone.now()
+                update_invoice = update_invoice_transaction(customer=customer,
+                                                            invoice_id=invoice.id,
+                                                            new_products=updated_items,
+                                                            new_service_products=new_services,
+                                                            new_total_amount=new_total_amount,
+                                                            new_tax_amount=new_tax_amount,
+                                                            user=request.user)
+                if not update_invoice:
+                    return Response({"detail": "Failed to update invoice transactions."}, status=status.HTTP_400_BAD_REQUEST)
                 invoice.save()
 
                 audit_log(user=request.user,
@@ -1561,9 +1800,10 @@ class UpdateInvoiceView(APIView):
 
         except Exception as e:
             log.trace.trace(f"Error occurred while updating invoice {traceback.format_exc()}")
+            print(traceback.format_exc())
             return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        
+
 class FinalizeInvoiceView(APIView):
     def get_user_from_token(self, request):
         token = request.headers.get("Authorization", "").split(" ")[1]
