@@ -778,7 +778,7 @@ class GetAllOwnerTransactionsAPI(APIView):
         for transaction in transactions:
             transaction_data.append({
                 'id': transaction.id,
-                'amount': transaction.amount,
+                'amount': transaction.payment_amount,
                 'description': transaction.description,
                 'transaction_reference_id': transaction.transaction_reference_id,
                 'payment_method': transaction.payment_method,
