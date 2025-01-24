@@ -20,7 +20,7 @@ logger.add(
 # Audit Log
 audit_logger = logger.bind(name="AUDIT")
 audit_logger.add(
-    os.path.join(logs_dir, 'audit_{time:YYYY-MM-DD}.log'),
+    os.path.join(logs_dir, 'audit.log'),
     rotation="10 MB",
     retention="30 days",
     level="SUCCESS",
@@ -30,7 +30,7 @@ audit_logger.add(
 # Application Log
 app_logger = logger.bind(name="APP")
 app_logger.add(
-    os.path.join(logs_dir, 'app_{time:YYYY-MM-DD}.log'),
+    os.path.join(logs_dir, 'app.log'),
     rotation="50 MB",
     retention="15 days",
     level="INFO",
@@ -40,7 +40,7 @@ app_logger.add(
 # Trace Log
 trace_logger = logger.bind(name="TRACE")
 trace_logger.add(
-    os.path.join(logs_dir, 'trace_{time:YYYY-MM-DD}.log'),
+    os.path.join(logs_dir, 'trace.log'),
     rotation="5 MB",
     retention="7 days",
     level="DEBUG",
