@@ -741,7 +741,6 @@ class OwnerContributionAPI(APIView):
 
                 owner_entry = OwnerPaymentDetails.objects.create(
                     transaction=transaction_entry,
-                    amount=amount,
                     description=description,
                     transaction_reference_id=transaction_reference,
                     payment_method=payment_method,
