@@ -145,7 +145,10 @@ class VendorPaymentDetails(models.Model):
     
 
 class OwnerPaymentDetails(models.Model):
+    TRANSACTION_TYPES = [("money_added", "Money Added"),("money_removed", "Money Removed")]
+
     transaction = models.OneToOneField(Transaction, on_delete=models.CASCADE, related_name="owner_payment_details")
+    transaction_type = models.CharField(max_length=20, choices=TRANSACTION_TYPES, default='money_added')
     description = models.CharField(max_length=255, blank=True, null=True)
     payment_method = models.CharField(max_length=50, null=True, blank=True)  # e.g., 'cash', 'bank_transfer', 'cheque'
     transaction_reference_id = models.CharField(max_length=100, null=True, blank=True)  # Bank

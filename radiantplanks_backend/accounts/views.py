@@ -741,6 +741,7 @@ class OwnerContributionAPI(APIView):
 
                 owner_entry = OwnerPaymentDetails.objects.create(
                     transaction=transaction_entry,
+                    transaction_type='money_added',
                     description=description,
                     transaction_reference_id=transaction_reference,
                     payment_method=payment_method,
@@ -835,6 +836,15 @@ class OwnerTakeOutMoneyAPI(APIView):
                     description=f"Credit {description}"
                 )
 
+                owner_entry = OwnerPaymentDetails.objects.create(
+                    transaction=transaction_entry,
+                    transaction_type='money_removed',
+                    description=description,
+                    transaction_reference_id=transaction_reference,
+                    payment_method=payment_method,
+                    payment_amount=amount,
+                    payment_date=withdrawal_date)
+
                 # Update account balances
                 owner_equity_account.balance -= amount
                 owner_equity_account.save()
@@ -846,7 +856,7 @@ class OwnerTakeOutMoneyAPI(APIView):
                               action="Owner Money Withdrawal recorded", 
                               ip_add=request.META.get('HTTP_X_FORWARDED_FOR'), 
                               model_name="OwnerPaymentDetails", 
-                              record_id=transaction_entry.id)
+                              record_id=owner_entry.id)
 
             return Response({
                 "message": "Owner money withdrawal recorded successfully.",
