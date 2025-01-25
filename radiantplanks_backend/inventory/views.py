@@ -1556,6 +1556,7 @@ class RetrieveInvoiceView(APIView):
             invoice_data = {
                 "id": invoice.id,
                 "customer": invoice.customer.business_name,
+                "customer_id": invoice.customer.customer_id,
                 "customer_email": invoice.customer_email,
                 "customer_email_cc": invoice.customer_email_cc,
                 "customer_email_bcc": invoice.customer_email_bcc,
