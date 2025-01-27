@@ -125,13 +125,13 @@ class CreateExpenseView(APIView):
                     transaction=transaction,
                     account=expense_account,
                     description=f"Payment to vendor: {vendor.business_name}",
-                    debit_amount=total_amount,
-                    credit_amount=0
+                    debit_amount=0,
+                    credit_amount=total_amount
                 )
                 expense_account.balance -= Decimal(total_amount)
                 expense_account.save()
                 # Process each item in the invoice
-                
+
                 VendorPaymentDetails.objects.create(
                     vendor=vendor,
                     transaction=transaction,
@@ -162,8 +162,8 @@ class CreateExpenseView(APIView):
                         transaction=transaction,
                         account=account,
                         description=description,
-                        debit_amount=0,
-                        credit_amount=price
+                        debit_amount=price,
+                        credit_amount=0
                     )
                     account.balance += Decimal(price)
                     account.save()

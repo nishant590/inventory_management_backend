@@ -512,7 +512,8 @@ class ProfitLossStatementView(APIView):
                 # Apply date filtering if dates are provided
                 expense_query = TransactionLine.objects.filter(
                     account=account, 
-                    transaction__transaction_type='expense'
+                    transaction__transaction_type='expense',
+                    is_active=True
                 )
                 
                 if start_date:

@@ -2027,8 +2027,8 @@ class InvoicePaidView(APIView):
                         transaction=transaction,
                         account=Account.objects.get(account_type="accounts_receivable"),
                         description=line["description"],
-                        debit_amount=line["credit_amount"],
-                        credit_amount=line["debit_amount"],
+                        debit_amount=0,
+                        credit_amount=line["credit_amount"],
                     )
 
                 # Log credit to bank/cash account
@@ -2036,8 +2036,8 @@ class InvoicePaidView(APIView):
                     transaction=transaction,
                     account=credit_account,
                     description=f"Payment credited for customer {customer.business_name}",
-                    debit_amount=0,
-                    credit_amount=payment_amount,
+                    debit_amount=payment_amount,
+                    credit_amount=0,
                 )
 
                 # Save payment details in CustomerPaymentDetail
@@ -3054,8 +3054,8 @@ class BillPaidView(APIView):
                         transaction=transaction,
                         account=Account.objects.get(account_type="accounts_payable"),
                         description=line["description"],
-                        credit_amount=line["debit_amount"],
-                        debit_amount=line["credit_amount"],
+                        credit_amount=line["credit_amount"],
+                        debit_amount=0,
                     )
 
                 # Log debit from bank/cash account
@@ -3063,8 +3063,8 @@ class BillPaidView(APIView):
                     transaction=transaction,
                     account=debit_account,
                     description=f"Payment debited for vendor {vendor.business_name}",
-                    credit_amount=0,
-                    debit_amount=payment_amount,
+                    credit_amount=payment_amount,
+                    debit_amount=0,
                 )
 
                 # Save payment details in VendorPaymentDetail
