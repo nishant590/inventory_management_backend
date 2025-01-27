@@ -1084,6 +1084,44 @@ class ProductCreateView(APIView):
         }, status=status.HTTP_201_CREATED)
 
 
+class InventoryStockView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get_user_from_token(self, request):
+        token = request.headers.get("Authorization", "").split(" ")[1]
+        try:
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+            user_id = payload.get("user_id")
+            user = NewUser.objects.get(id=user_id)
+            return user
+        except (jwt.ExpiredSignatureError, jwt.DecodeError, NewUser.DoesNotExist):
+            return None
+
+    def get(self, request):
+        user = self.get_user_from_token(request)
+        if not user:
+            return Response({"detail": "Invalid or expired token."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        products = Product.objects.filter(is_active=True, product_type="product")
+        products_data = [
+            {
+                "id": product.id,
+                "product_image": product.images,
+                "product_type": product.product_type,
+                "product_name": product.product_name,
+                "product_description": product.purchase_description,
+                "category": product.category_id.name if product.category_id else None,
+                "sku": product.sku,
+                "product_barcode": product.barcode,
+                "product_length": product.tile_length,
+                "product_width": product.tile_width,
+                "stock_quantity": product.stock_quantity,
+            }
+            for product in products
+        ]
+        return Response(products_data, status=status.HTTP_200_OK)
+
+
 class ProductUpdateView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -1629,6 +1667,18 @@ class UpdateInvoiceView(APIView):
                 new_total_amount = Decimal(data.get("total_amount"))
                 new_tax_amount = Decimal(data.get("tax_amount"))
                 new_tax_percent = Decimal(data.get("tax_percentage"))
+                invoice_paid_amount = Decimal(data.get("invoice_paid_amount", invoice.paid_amount))
+                invoice_unpaid_amount = Decimal(new_total_amount - invoice_paid_amount)
+
+                attachments = data.get("attachments")
+                if attachments:
+                    extension = os.path.splitext(attachments.name)[1]  # Get the file extension
+                    short_unique_filename = generate_short_unique_filename(extension)
+                    fs = FileSystemStorage(location=os.path.join(settings.MEDIA_ROOT, 'invoice_attachments'))
+                    logo_path = fs.save(short_unique_filename, attachments)
+                    attachments_url = posixpath.join('media/invoice_attachments', logo_path)
+                else:
+                    attachments_url = invoice.attachments
 
                 # Create a mapping of product_id to original quantities for comparison
                 original_product_map = {item.product.id: item.quantity for item in original_items}
@@ -1654,11 +1704,15 @@ class UpdateInvoiceView(APIView):
                 invoice.terms = data.get("terms", invoice.terms)
                 invoice.bill_date = data.get("bill_date", invoice.bill_date)
                 invoice.due_date = data.get("due_date", invoice.due_date)
-                invoice.sum_amount = float(data.get("sum_amount", invoice.sum_amount))
+                invoice.sum_amount = Decimal(data.get("sum_amount", invoice.sum_amount))
                 invoice.is_taxed = is_taxed
-                invoice.tax_percentage = float(data.get("tax_percentage", invoice.tax_percentage))
-                invoice.tax_amount = float(data.get("tax_amount", invoice.tax_amount))
-                invoice.total_amount = float(data.get("total_amount", invoice.total_amount))
+                invoice.tax_percentage = Decimal(data.get("tax_percentage", invoice.tax_percentage))
+                invoice.tax_amount = Decimal(data.get("tax_amount", invoice.tax_amount))
+                invoice.total_amount = Decimal(data.get("total_amount", invoice.total_amount))
+                invoice.payment_status = data.get("payment_status", invoice.payment_status)
+                invoice.paid_amount = invoice_paid_amount
+                invoice.unpaid_amount = invoice_unpaid_amount
+                invoice.attachments = attachments_url
                 invoice.message_on_invoice = data.get("message_on_invoice", invoice.message_on_invoice)
                 invoice.message_on_statement = data.get("message_on_statement", invoice.message_on_statement)
 
