@@ -1830,7 +1830,7 @@ class UpdateInvoiceView(APIView):
 
                 # Update invoice details                
                 invoice.sum_amount = sum(float(item['quantity']) * float(item['unit_price']) for item in updated_items)
-                invoice.total_amount = invoice.sum_amount + invoice.tax_amount
+                invoice.total_amount = Decimal(invoice.sum_amount) + Decimal(invoice.tax_amount)
                 invoice.updated_by = request.user
                 invoice.updated_date = timezone.now()
                 update_invoice = update_invoice_transaction(customer=customer,
