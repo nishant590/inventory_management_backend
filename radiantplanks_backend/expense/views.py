@@ -109,17 +109,6 @@ class CreateExpenseView(APIView):
                 )
 
 
-                VendorPaymentDetails.objects.create(
-                    vendor=vendor,
-                    transaction=transaction,
-                    payment_method=request.data.get("payment_method", ""),
-                    transaction_reference_id=request.data.get("transaction_id", ""),
-                    bank_name=request.data.get("bank_name", ""),
-                    cheque_number=request.data.get("cheque_number", ""),
-                    payment_date=payment_date,
-                    payment_amount=total_amount,
-                )
-
                 transaction = Transaction.objects.create(
                     reference_number=expense_number,
                     transaction_type="expense",
@@ -142,6 +131,18 @@ class CreateExpenseView(APIView):
                 expense_account.balance -= Decimal(total_amount)
                 expense_account.save()
                 # Process each item in the invoice
+                
+                VendorPaymentDetails.objects.create(
+                    vendor=vendor,
+                    transaction=transaction,
+                    payment_method=request.data.get("payment_method", ""),
+                    transaction_reference_id=request.data.get("transaction_id", ""),
+                    bank_name=request.data.get("bank_name", ""),
+                    cheque_number=request.data.get("cheque_number", ""),
+                    payment_date=payment_date,
+                    payment_amount=total_amount,
+                )
+
                 for item_data in items:
                     account = Account.objects.get(id=item_data['account_id'])
                     description = item_data.get("description","")  # Can be 'tile', 'box', or 'pallet'
