@@ -1665,8 +1665,12 @@ class UpdateInvoiceView(APIView):
                 invoice = Invoice.objects.get(id=invoice_id, is_active=True)
                 original_items = InvoiceItem.objects.filter(invoice=invoice)
                 new_total_amount = Decimal(data.get("total_amount"))
-                new_tax_amount = Decimal(data.get("tax_amount"))
-                new_tax_percent = Decimal(data.get("tax_percentage"))
+                if not is_taxed:
+                    new_tax_amount = Decimal(data.get("tax_amount"))
+                    new_tax_percent = Decimal(data.get("tax_percentage"))
+                    if new_tax_amount > Decimal(0) or new_tax_percent > Decimal(0):
+                        new_tax_amount = Decimal(0) 
+                        new_tax_percent = Decimal(0)
                 invoice_paid_amount = Decimal(data.get("invoice_paid_amount", invoice.paid_amount))
                 invoice_unpaid_amount = Decimal(new_total_amount - invoice_paid_amount)
 
