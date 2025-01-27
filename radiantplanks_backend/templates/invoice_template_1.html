@@ -167,6 +167,16 @@
                             <td class="total">Total</td>
                             <td class="total-row-text">${{ invoice.total_amount }}</td>
                         </tr>
+                        {% if invoice.paid_amount > 0 %}
+                            <tr>
+                                <td class="total-row">Paid</td>
+                                <td class="total-row">${{ invoice.paid_amount }}</td>
+                            </tr>
+                            <tr>
+                                <td class="total-row">Total Due</td>
+                                <td class="total-row">${{ invoice.unpaid_amount }}</td>
+                            </tr>
+                        {% endif %}
                     </table>
                 </td>
             </tr>
