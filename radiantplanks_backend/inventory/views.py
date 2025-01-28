@@ -2764,6 +2764,14 @@ class CreateBillView(APIView):
                         else:
                             quantity_in_tiles = quantity  # Assume 'box' is the base unit
 
+                        #calculating weighted average
+                        current_stock_value = Decimal(product.stock_quantity) * Decimal(product.purchase_price)
+                        new_stock_value = Decimal(quantity_in_tiles) * Decimal(unit_price)
+                        total_stock_value = current_stock_value + new_stock_value
+                        total_stock_quantity = Decimal(product.stock_quantity) + Decimal(quantity_in_tiles)
+                        weighted_average = round(total_stock_value / total_stock_quantity, 2)
+                        product.purchase_price = weighted_average
+
                         # Deduct stock and calculate the line total
                         product.stock_quantity += quantity_in_tiles
                         transaction_products.append({'quantity': quantity_in_tiles, 

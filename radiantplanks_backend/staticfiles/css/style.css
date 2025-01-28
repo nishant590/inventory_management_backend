@@ -40,6 +40,10 @@ body {
     flex-direction: column;
 }
 
+.invoice-title {
+    justify-self: end;
+}
+
 .logo {
     width: 142px;
     height: 62px;
@@ -50,6 +54,7 @@ body {
     font-size: 30px;
     color: #F29622;
     margin-top: -2px;
+    text-align: end;
 }
 
 .invoice-number {
@@ -132,10 +137,12 @@ body {
 .section-details2 {
     font-weight: 600;
     font-size: 14px;
+    text-align: start;
 }
 
 .section-details3 {
     font-size: 14px;
+    text-align: start;
 }
 
 .table-details2 {
