@@ -2310,6 +2310,147 @@ class SendInvoiceView(APIView):
             return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+class SendInvoiceRenderData(APIView):
+    def post(self, request, invoice_id):
+        try:
+            # Fetch the invoice and related items
+            invoice = Invoice.objects.get(id=invoice_id)
+            items = InvoiceItem.objects.filter(invoice=invoice)
+
+            # Prepare data for template rendering
+            items_data = [
+                {
+                    "product_image": item.product.images if item.product.images else None,
+                    "product": item.product.product_name,
+                    "product_type": item.product.product_type,
+                    "sku": item.product.sku,
+                    "dim": f'{round(item.product.tile_width)}" x {round(item.product.tile_length)}"' if item.product.tile_length and item.product.tile_width else "-",
+                    "quantity": item.quantity,
+                    "unit_type": "box",
+                    "unit_price": item.unit_price,
+                    "total_price": item.unit_price * item.quantity,
+                }
+                for item in items
+            ]
+            invoice_data = {
+                "customer": invoice.customer.business_name,
+                "customer_id": invoice.customer.customer_id,
+                "customer_email": invoice.customer_email,
+                "customer_email_cc": invoice.customer_email_cc,
+                "customer_email_bcc": invoice.customer_email_bcc,
+                "billing_address_street_1" : invoice.billing_address_street_1,
+                "billing_address_street_2" : invoice.billing_address_street_2,
+                "billing_address_city" : invoice.billing_address_city,
+                "billing_address_state" : invoice.billing_address_state,
+                "billing_address_postal_code" : invoice.billing_address_postal_code,
+                "billing_address_country" : invoice.billing_address_country,
+                "shipping_address_street_1" : invoice.shipping_address_street_1,
+                "shipping_address_street_2" : invoice.shipping_address_street_2,
+                "shipping_address_city" : invoice.shipping_address_city,
+                "shipping_address_state" : invoice.shipping_address_state,
+                "shipping_address_postal_code" : invoice.shipping_address_postal_code,
+                "shipping_address_country" : invoice.shipping_address_country,
+                "bill_date": invoice.bill_date,
+                "terms": invoice.terms,
+                "due_date": invoice.due_date,
+                "message_on_invoice": invoice.message_on_invoice,
+                "sum_amount": invoice.sum_amount,
+                "is_taxed": invoice.is_taxed,
+                "tax_percentage": invoice.tax_percentage,
+                "tax_amount": invoice.tax_amount,
+                "total_amount": invoice.total_amount,
+            }
+            context = {
+                "invoice": invoice_data,
+                "items": items_data
+            }
+
+            audit_log_entry = audit_log(user=request.user,
+                              action="Invoice Sent", 
+                              ip_add=request.META.get('HTTP_X_FORWARDED_FOR'), 
+                              model_name="Invoice", 
+                              record_id=invoice.id)
+            log.audit.success(f"Invoice send successfully | {invoice.id} | {request.user}")
+            return Response({"message": "Invoice sent successfully",
+                             "data":context}, status=status.HTTP_200_OK)
+        except Invoice.DoesNotExist:
+            return Response({"detail": "Invoice not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            log.trace.trace(f"Error while sending Invoice | {invoice.id} | {traceback.format_exc()}")
+            return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class SendEmailPdfToClient(APIView):
+    def post(self, request, invoice_id):
+        try:
+            invoice = Invoice.objects.get(id=invoice_id)
+            items = InvoiceItem.objects.filter(invoice=invoice)
+            attachments = request.FILES.get("invoice_pdf")
+            if not attachments:
+                Response({"message":"Error while fetching file"}, status=status.HTTP_400_BAD_REQUEST)
+            extension = os.path.splitext(attachments.name)[1]
+            if extension != "pdf":
+                Response({"message":"Unsupported file format"}, status=status.HTTP_400_BAD_REQUEST)
+            # Prepare data for template rendering
+            items_data = [
+                {
+                    "product_image": os.path.join(settings.BASE_DIR, item.product.images) if item.product.images else None,
+                    "product": item.product.product_name,
+                    "product_type": item.product.product_type,
+                    "sku": item.product.sku,
+                    "dim": f'{round(item.product.tile_width)}" x {round(item.product.tile_length)}"' if item.product.tile_length and item.product.tile_width else "-",
+                    "quantity": item.quantity,
+                    "unit_type": "box",
+                    "unit_price": item.unit_price,
+                    "total_price": item.unit_price * item.quantity,
+                }
+                for item in items
+            ]
+            context = {
+                "invoice": invoice,
+                "customer": invoice.customer,
+                "items": items_data,
+                "logo_url": 'media/logo/RPLogo.png'
+            }
+            css_file_path = os.path.join(settings.BASE_DIR, 'staticfiles', 'css', 'style.css')
+            logo_file_path = os.path.join(settings.BASE_DIR, 'media', 'logo', 'RPlogo.png')
+
+            context['css_file_path'] = css_file_path
+            context['logo_file_path'] = logo_file_path
+            cc_email = invoice.customer_email_cc
+            if cc_email:
+                cc_email = cc_email.split(",")
+            else:
+                cc_email = []
+            bcc_email = invoice.customer_email_bcc
+            if bcc_email:
+                bcc_email = bcc_email.split(",")
+            else:
+                bcc_email = []
+
+            email_html_body = render_to_string("mail_template.html", context)
+
+
+            # Send email with the PDF
+            send_email_with_pdf(email=invoice.customer_email,  email_body=email_html_body,
+                                pdf_buffer=attachments, invoice_id=invoice.id,
+                                cc_email=cc_email, bcc_email=bcc_email, is_new_method=True)
+            audit_log_entry = audit_log(user=request.user,
+                              action="Invoice Sent", 
+                              ip_add=request.META.get('HTTP_X_FORWARDED_FOR'), 
+                              model_name="Invoice", 
+                              record_id=invoice.id)
+            log.audit.success(f"Invoice send successfully | {invoice.id} | {request.user}")
+            return Response({"message": "Invoice sent successfully"}, status=status.HTTP_200_OK)
+
+        except Invoice.DoesNotExist:
+            return Response({"detail": "Invoice not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            log.trace.trace(f"Error while sending Invoice | {invoice.id} | {traceback.format_exc()}")
+            return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
 def generate_pdf_v3(html_string, options=None):
     """
     Generate a PDF from an HTML string using pdfkit and BytesIO.
@@ -2455,7 +2596,7 @@ def generate_pdf(html_string, pdf_path):
     driver.quit()
 
 
-def send_email_with_pdf(email, pdf_buffer, email_body, invoice_id, cc_email = [],bcc_email = []):
+def send_email_with_pdf(email, pdf_buffer, email_body, invoice_id, cc_email = [], bcc_email = [], is_new_method=False):
     from django.core.mail import EmailMessage
     # html_content = render_to_string('mail_template.html')
 
@@ -2468,9 +2609,14 @@ def send_email_with_pdf(email, pdf_buffer, email_body, invoice_id, cc_email = []
         bcc=bcc_email
     )
     email.content_subtype = 'html'
-    if pdf_buffer:
-        email.attach(f'Invoice_{invoice_id}.pdf', pdf_buffer.getvalue(), 'application/pdf')
-        email.send()
+    if is_new_method:
+        if pdf_buffer:
+            email.attach(f'Invoice_{invoice_id}.pdf', pdf_buffer.read(), 'application/pdf')
+            email.send()
+    else:
+        if pdf_buffer:
+            email.attach(f'Invoice_{invoice_id}.pdf', pdf_buffer.getvalue(), 'application/pdf')
+            email.send()
 
 
 class DownloadInvoiceView(APIView):

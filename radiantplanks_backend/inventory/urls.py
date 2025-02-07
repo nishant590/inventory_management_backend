@@ -24,7 +24,9 @@ from .views import (CategoryListCreateView,
                     ListVendorBillsView,
                     RetrieveBillView,
                     InvoicePaidView,
-                    BillPaidView)
+                    BillPaidView,
+                    SendEmailPdfToClient,
+                    SendInvoiceRenderData)
 
 urlpatterns = [
     # Category URLs
@@ -52,7 +54,11 @@ urlpatterns = [
     path('invoice/makepaid/', InvoicePaidView.as_view(), name='invoice-paid'),
     path('invoice/send/<int:invoice_id>/', SendInvoiceView.as_view(), name='invoice-send'),
     path('invoice/download/<int:invoice_id>/', DownloadInvoiceView.as_view(), name='invoice-download'),
+    path('invoice/get-invoice-data/<int:invoice_id>/', SendInvoiceRenderData.as_view(), name="get-invoice-render-data"),
+    path('invoice/send-invoice/<int:invoice_id>/', SendEmailPdfToClient.as_view(), name="send-email-invoice-to-client"),
+
     path('packingslip/download/<int:invoice_id>/', DownloadPackingSlipView.as_view(), name='packing-slip-download'),
+    
     path('bill/create/', CreateBillView.as_view(), name='bill-create'),
     path('bill/', ListBillsView.as_view(), name='bill-list'),
     path('bill/vendor/<int:vendor_id>/', ListVendorBillsView.as_view(), name='bill-list'),
