@@ -968,6 +968,7 @@ class ProductCreateView(APIView):
         unit = data.get("unit")
         reorder_level = data.get("reorder_level")
         as_on_date = data.get("as_on_date")
+        tile_area = data.get("total_sq_ft", None)
         batch_lot_number = data.get("batch_lot_number")
         tile_length = data.get("tile_length")
         tile_width = data.get("tile_width")
@@ -1014,7 +1015,8 @@ class ProductCreateView(APIView):
 
         # Calculate stock quantity for products
         if product_type == "product":
-            tile_area = self.calculate_area(float(tile_length), float(tile_width), int(no_of_tiles))
+            if not tile_area:
+                tile_area = self.calculate_area(float(tile_length), float(tile_width), int(no_of_tiles))
         else:
             tile_area = None
 
@@ -1665,9 +1667,9 @@ class UpdateInvoiceView(APIView):
                 invoice = Invoice.objects.get(id=invoice_id, is_active=True)
                 original_items = InvoiceItem.objects.filter(invoice=invoice)
                 new_total_amount = Decimal(data.get("total_amount"))
+                new_tax_amount = Decimal(data.get("tax_amount"))
+                new_tax_percent = Decimal(data.get("tax_percentage"))
                 if not is_taxed:
-                    new_tax_amount = Decimal(data.get("tax_amount"))
-                    new_tax_percent = Decimal(data.get("tax_percentage"))
                     if new_tax_amount > Decimal(0) or new_tax_percent > Decimal(0):
                         new_tax_amount = Decimal(0) 
                         new_tax_percent = Decimal(0)
@@ -1833,8 +1835,8 @@ class UpdateInvoiceView(APIView):
                     InvoiceItem.objects.get(invoice=invoice, product=product).delete()
 
                 # Update invoice details                
-                invoice.sum_amount = sum(float(item['quantity']) * float(item['unit_price']) for item in updated_items)
-                invoice.total_amount = Decimal(invoice.sum_amount) + Decimal(invoice.tax_amount)
+                # invoice.sum_amount = sum(float(item['quantity']) * float(item['unit_price']) for item in updated_items)
+                # invoice.total_amount = Decimal(invoice.sum_amount) + Decimal(invoice.tax_amount)
                 invoice.updated_by = request.user
                 invoice.updated_date = timezone.now()
                 update_invoice = update_invoice_transaction(customer=customer,
