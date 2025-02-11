@@ -26,7 +26,8 @@ from .views import (CategoryListCreateView,
                     InvoicePaidView,
                     BillPaidView,
                     SendEmailPdfToClient,
-                    SendInvoiceRenderData)
+                    SendInvoiceRenderData,
+                    )
 
 urlpatterns = [
     # Category URLs

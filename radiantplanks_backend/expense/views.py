@@ -636,9 +636,11 @@ class UploadExpenseCSVView(APIView):
                 return Response({"detail": "Missing required columns in CSV."}, status=status.HTTP_400_BAD_REQUEST)
             
             # Group rows by expense_number
+
             expenses_data = df.groupby('expense_number').apply(lambda x: x.to_dict('records')).to_dict()
             
             # Process each expense
+ 
             with transaction.atomic():
                 for expense_number, rows in expenses_data.items():
                     # Extract common expense data from the first row
@@ -646,9 +648,11 @@ class UploadExpenseCSVView(APIView):
                     vendor_id = first_row['vendor_id']
                     payment_date = first_row['payment_date']
                     total_amount = Decimal(first_row['total_amount'])
-                    is_paid = first_row['is_paid'].lower() in ['true', '1', 'yes', 'y']
+                    is_paid = first_row['is_paid']
                     expense_account_id = first_row['expense_account']
-                    tags = first_row.get('tags', '').split(',')
+                    tags = first_row.get('tags', '')
+                    tags = '' if tags is None or pd.isna(tags) else str(tags)
+                    tags = tags.split(',')
                     memo = first_row.get('memo', '')
                     payment_method = first_row.get('payment_method', '')
                     transaction_id = first_row.get('transaction_id', '')
