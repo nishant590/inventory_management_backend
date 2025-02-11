@@ -942,37 +942,64 @@ class EditOwnerTransactionAPI(APIView):
 
                 for line in old_transaction_lines:
                     if line.account == old_transaction_source_account:
-                        old_transaction_source_account.balance -= line.debit_amount
-                        old_transaction_source_account.save()
+                        if owner_entry.transaction_type == "money_added":
+                            old_transaction_source_account.balance -= line.debit_amount
+                            old_transaction_source_account.save()
+                        if owner_entry.transaction_type == "money_removed":
+                            old_transaction_source_account.balance += line.debit_amount
+                            old_transaction_source_account.save()
                     elif line.account == owner_equity_account:
-                        owner_equity_account.balance -= line.credit_amount
+                        if owner_entry.transaction_type == "money_added":
+                            owner_equity_account.balance -= line.credit_amount
+                        if owner_entry.transaction_type == "money_removed":
+                            owner_equity_account.balance += line.credit_amount
+                        
 
                 old_transaction_lines.update(is_active=False)
                 # Create new transaction lines
                 source_account = get_object_or_404(Account, code=source_account_code, is_active=True)
-                TransactionLine.objects.create(
-                    transaction=transaction_entry,
-                    account=source_account,
-                    debit_amount=amount,
-                    credit_amount=0,
-                    description=f"Debit {description}"
-                )
-                TransactionLine.objects.create(
-                    transaction=transaction_entry,
-                    account=owner_equity_account,
-                    debit_amount=0,
-                    credit_amount=amount,
-                    description=f"Credit {description}"
-                )
-
+                if owner_entry.transaction_type == "money_added":
+                    TransactionLine.objects.create(
+                        transaction=transaction_entry,
+                        account=source_account,
+                        debit_amount=amount,
+                        credit_amount=0,
+                        description=f"Debit {description}"
+                    )
+                    TransactionLine.objects.create(
+                        transaction=transaction_entry,
+                        account=owner_equity_account,
+                        debit_amount=0,
+                        credit_amount=amount,
+                        description=f"Credit {description}"
+                    )
+                elif owner_entry.transaction_type == "money_removed":
+                    TransactionLine.objects.create(
+                        transaction=transaction_entry,
+                        account=source_account,
+                        debit_amount=0,
+                        credit_amount=amount,
+                        description=f"Credit {description}"
+                    )
+                    TransactionLine.objects.create(
+                        transaction=transaction_entry,
+                        account=owner_equity_account,
+                        debit_amount=amount,
+                        credit_amount=0,
+                        description=f"Debit {description}"
+                    )
                 # Update OwnerPaymentDetails if necessary
 
                 # Update account balances
                 # Subtract the old amounts from the account balances
 
                 # Add the new amounts to the account balances
-                source_account.balance += amount
-                owner_equity_account.balance += amount
+                if owner_entry.transaction_type == "money_added":
+                    source_account.balance += amount
+                    owner_equity_account.balance += amount
+                if owner_entry.transaction_type == "money_removed":
+                    source_account.balance -= amount
+                    owner_equity_account.balance -= amount
 
                 source_account.save()
                 owner_equity_account.save()
