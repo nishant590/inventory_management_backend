@@ -916,7 +916,12 @@ class EditOwnerTransactionAPI(APIView):
             old_transaction_lines = TransactionLine.objects.filter(transaction=transaction_entry, is_active=True).all()
 
             # Fetch accounts
-            source_account = get_object_or_404(Account, code=source_account_code, is_active=True)
+            old_transaction_source_account = None
+            for transaction_line in old_transaction_lines:
+                if transaction_line.account.code != 'OWN-001':
+                    old_transaction_source_account = transaction_line.account
+                    break
+            # if old_transaction_source_account.code == source_account_code: 
             owner_equity_account = get_object_or_404(Account, code='OWN-001', is_active=True)
 
             with transaction.atomic():
@@ -936,13 +941,15 @@ class EditOwnerTransactionAPI(APIView):
                 transaction_entry.save()
 
                 for line in old_transaction_lines:
-                    if line.account == source_account:
-                        source_account.balance -= line.debit_amount
+                    if line.account == old_transaction_source_account:
+                        old_transaction_source_account.balance -= line.debit_amount
+                        old_transaction_source_account.save()
                     elif line.account == owner_equity_account:
                         owner_equity_account.balance -= line.credit_amount
 
                 old_transaction_lines.update(is_active=False)
                 # Create new transaction lines
+                source_account = get_object_or_404(Account, code=source_account_code, is_active=True)
                 TransactionLine.objects.create(
                     transaction=transaction_entry,
                     account=source_account,
