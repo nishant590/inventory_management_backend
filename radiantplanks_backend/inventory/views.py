@@ -1117,6 +1117,7 @@ class InventoryStockView(APIView):
                 "product_barcode": product.barcode,
                 "product_length": product.tile_length,
                 "product_width": product.tile_width,
+                "product_area": product.tile_area,
                 "stock_quantity": product.stock_quantity,
             }
             for product in products
@@ -1590,7 +1591,7 @@ class RetrieveInvoiceView(APIView):
             user = self.get_user_from_token(request)
             invoice = Invoice.objects.get(id=id, is_active=True)
             invoice_items = InvoiceItem.objects.filter(invoice=invoice).values(
-                "product__id", "product__product_name", "quantity", "unit_price", "description"
+                "product__id", "product__product_name", "quantity", "unit_price", "description", "product__tile_area"
             )
 
             invoice_data = {
