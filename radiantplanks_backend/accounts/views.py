@@ -868,3 +868,95 @@ class OwnerTakeOutMoneyAPI(APIView):
 
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        
+
+class EditOwnerTransactionAPI(APIView):
+    def put(self, request, id):
+        data = request.data
+        try:
+            amount = Decimal(data.get('amount', 0))
+            source_account_code = data.get('source_account')  # e.g., 'cash' or 'bank'
+            description = data.get('description', 'Owner Contribution')
+            contribution_date = data.get('date', datetime.now().date())
+            transaction_reference = data.get('transaction_reference', None)
+            payment_method = data.get('payment_method', 'cash')
+
+            if amount <= 0:
+                return Response({"error": "Amount must be greater than zero."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            owner_entry = OwnerPaymentDetails.objects.filter(id=id).first()
+
+            # Fetch the existing transaction
+            transaction_entry = get_object_or_404(Transaction, id=owner_entry.transaction.id)
+            old_transaction_lines = TransactionLine.objects.filter(transaction=transaction_entry, is_active=True).all()
+
+            # Fetch accounts
+            source_account = get_object_or_404(Account, code=source_account_code, is_active=True)
+            owner_equity_account = get_object_or_404(Account, code='OWN-001', is_active=True)
+
+            with transaction.atomic():
+                # Set existing transaction lines to inactive
+
+                if owner_entry:
+                        owner_entry.description = description
+                        owner_entry.transaction_reference_id = transaction_reference
+                        owner_entry.payment_method = payment_method
+                        owner_entry.payment_amount = amount
+                        owner_entry.payment_date = contribution_date
+                        owner_entry.save()
+
+                # Update the transaction details
+                transaction_entry.date = contribution_date
+                transaction_entry.description = description
+                transaction_entry.save()
+
+                for line in old_transaction_lines:
+                    if line.account == source_account:
+                        source_account.balance -= line.debit_amount
+                    elif line.account == owner_equity_account:
+                        owner_equity_account.balance -= line.credit_amount
+
+                old_transaction_lines.update(is_active=False)
+                # Create new transaction lines
+                TransactionLine.objects.create(
+                    transaction=transaction_entry,
+                    account=source_account,
+                    debit_amount=amount,
+                    credit_amount=0,
+                    description=f"Debit {description}"
+                )
+                TransactionLine.objects.create(
+                    transaction=transaction_entry,
+                    account=owner_equity_account,
+                    debit_amount=0,
+                    credit_amount=amount,
+                    description=f"Credit {description}"
+                )
+
+                # Update OwnerPaymentDetails if necessary
+
+                # Update account balances
+                # Subtract the old amounts from the account balances
+
+                # Add the new amounts to the account balances
+                source_account.balance += amount
+                owner_equity_account.balance += amount
+
+                source_account.save()
+                owner_equity_account.save()
+
+            audit_log_entry = audit_log(user=request.user,
+                              action="Transaction updated", 
+                              ip_add=request.META.get('HTTP_X_FORWARDED_FOR'), 
+                              model_name="Transaction", 
+                              record_id=transaction_entry.id)
+
+            return Response({
+                "message": "Transaction updated successfully.",
+                "transaction_id": transaction_entry.id,
+                "source_account_balance": source_account.balance,
+                "owner_equity_balance": owner_equity_account.balance
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
