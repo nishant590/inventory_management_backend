@@ -775,9 +775,28 @@ class OwnerContributionAPI(APIView):
 
 class GetAllOwnerTransactionsAPI(APIView):
     def get(self, request):
+        # Fetch all owner transactions
         transactions = OwnerPaymentDetails.objects.all()
         transaction_data = []
+
         for transaction in transactions:
+            # Fetch the associated transaction
+            try:
+                transaction_obj = Transaction.objects.get(id=transaction.transaction.id)
+            except Transaction.DoesNotExist:
+                continue  # Skip if no associated transaction exists
+
+            # Fetch transaction lines for the transaction
+            transaction_lines = TransactionLine.objects.filter(transaction=transaction_obj)
+
+            # Find the account where money was added (credit amount > 0)
+            credited_account = None
+            for line in transaction_lines:
+                if line.account.code != "OWN-001":
+                    credited_account = line.account
+                    break  # Assuming only one account is credited per transaction
+
+            # Append transaction data with credited account information
             transaction_data.append({
                 'id': transaction.id,
                 'amount': transaction.payment_amount,
@@ -785,10 +804,16 @@ class GetAllOwnerTransactionsAPI(APIView):
                 'transaction_reference_id': transaction.transaction_reference_id,
                 'payment_method': transaction.payment_method,
                 'payment_date': transaction.payment_date,
+                'credited_account': {
+                    'id': credited_account.id if credited_account else None,
+                    'name': credited_account.name if credited_account else None,
+                    'account_number': credited_account.code if credited_account else None,
+                },
                 # Add other fields as needed
             })
-        return Response(transaction_data)
-    
+
+        return Response(transaction_data)    
+
 
 class OwnerTakeOutMoneyAPI(APIView):
     def post(self, request):
