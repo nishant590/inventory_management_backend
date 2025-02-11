@@ -254,7 +254,7 @@ class ExpenseDetailView(APIView):
                 "vendor": expense.vendor.business_name,
                 "vendor_id": expense.vendor.vendor_id,
                 "expense_number": expense.expense_number,
-                "expense_account":expense.expense_account,
+                "expense_account":expense.expense_account.name,
                 "expense_account_id":expense.expense_account.id,
                 "payment_date": expense.payment_date,
                 "total_amount": float(expense.total_amount),
