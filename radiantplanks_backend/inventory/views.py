@@ -910,6 +910,7 @@ class ProductListView(APIView):
                 "sku": product.sku,
                 "product_barcode": product.barcode,
                 "product_length": product.tile_length,
+                "product_area": product.tile_area,
                 "product_width": product.tile_width,
                 "stock_quantity": product.stock_quantity,
             }
@@ -2323,6 +2324,7 @@ class SendInvoiceRenderData(APIView):
             # Prepare data for template rendering
             items_data = [
                 {
+                    "invoice_id":invoice.id,
                     "product_image": item.product.images if item.product.images else None,
                     "product": item.product.product_name,
                     "product_type": item.product.product_type,
