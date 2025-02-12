@@ -2362,6 +2362,8 @@ class SendInvoiceRenderData(APIView):
                 "tax_percentage": invoice.tax_percentage,
                 "tax_amount": invoice.tax_amount,
                 "total_amount": invoice.total_amount,
+                "paid_amount":invoice.paid_amount,
+                "unpaid_amount":invoice.unpaid_amount,
             }
             context = {
                 "invoice": invoice_data,

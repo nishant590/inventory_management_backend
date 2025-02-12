@@ -369,7 +369,7 @@ class BalanceSheetView(APIView):
         except ValueError:
             return JsonResponse({'error': 'Invalid date format. Use YYYY-MM-DD.'}, status=400)
 
-        def calculate_balance(account):
+        def calculate_balance(account, non_asset=False):
             if start_date and end_date:
                 transaction_lines = TransactionLine.objects.filter(
                     account=account,
@@ -386,7 +386,11 @@ class BalanceSheetView(APIView):
                 )
             debit_sum = transaction_lines.aggregate(Sum('debit_amount'))['debit_amount__sum'] or Decimal('0.00')
             credit_sum = transaction_lines.aggregate(Sum('credit_amount'))['credit_amount__sum'] or Decimal('0.00')
-            return debit_sum - credit_sum
+            if non_asset:
+                return_val = credit_sum - debit_sum
+            else:
+                return_val = debit_sum - credit_sum 
+            return return_val
 
         # Asset Accounts
         asset_types = ['cash', 'bank', 'accounts_receivable', 'inventory', 'fixed_assets', 'other_current_assets']
@@ -412,7 +416,7 @@ class BalanceSheetView(APIView):
         for liability_type in liability_types:
             accounts = Account.objects.filter(account_type=liability_type, is_active=True)
             for account in accounts:
-                balance = calculate_balance(account)
+                balance = calculate_balance(account, non_asset=True)
                 liabilities.append({
                     'name': account.name,
                     'code': account.code,
@@ -428,7 +432,7 @@ class BalanceSheetView(APIView):
         for equity_type in equity_types:
             accounts = Account.objects.filter(account_type=equity_type, is_active=True)
             for account in accounts:
-                balance = calculate_balance(account)
+                balance = calculate_balance(account, non_asset=True)
                 equity.append({
                     'name': account.name,
                     'code': account.code,
