@@ -1118,6 +1118,8 @@ class InventoryStockView(APIView):
                 "product_barcode": product.barcode,
                 "product_length": product.tile_length,
                 "product_width": product.tile_width,
+                "product_price": product.purchase_price,
+                "product_price_per_sqf": round((product.purchase_price/product.tile_area), 2),
                 "product_area": product.tile_area,
                 "stock_quantity": product.stock_quantity,
             }
@@ -1173,10 +1175,11 @@ class ProductUpdateView(APIView):
         tile_width = data.get("tile_width", product.tile_width)
         no_of_tiles = data.get("no_of_tiles", product.no_of_tiles)
         quantity = data.get("quantity", product.stock_quantity)
+        tile_area = data.get("tile_area", product.tile_area)
         unit = data.get("unit")
-        tile_area = product.tile_area
+        # tile_area = product.tile_area
         if unit:
-            tile_area = self.calculate_area(float(tile_length), float(tile_width), int(no_of_tiles))
+            # tile_area = self.calculate_area(float(tile_length), float(tile_width), int(no_of_tiles))
         
             stock_quantity = None
             if product_type == "product":
@@ -1292,6 +1295,7 @@ class ProductRetrieveView(APIView):
             "no_of_tiles": product.no_of_tiles,
             "as_on_date": product.as_on_date,
             "purchase_price": product.purchase_price,
+            "purchase_price_per_sqf": round((product.purchase_price/product.tile_area), 2),
             "specifications": product.specifications,
             "tags": product.tags,
             "images": product.images,
