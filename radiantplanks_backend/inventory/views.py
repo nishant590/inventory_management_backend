@@ -1518,6 +1518,9 @@ class CreateInvoiceView(APIView):
                                     tax_amount=tax_amount, 
                                     service_products=service_products,
                                     user=request.user)
+                if not invoice_transactions:
+                    log.app.error("Invoice Creation Failed | Error in creating transaction | ")
+                    return Response("Invoice Creation Failed due to errors in transactions", status=status.HTTP_400_BAD_REQUEST)
             audit_log_entry = audit_log(user=request.user,
                               action="Invoice created", 
                               ip_add=request.META.get('HTTP_X_FORWARDED_FOR'), 
@@ -2962,6 +2965,9 @@ class CreateBillView(APIView):
                 # invoice.total_amount = total_amount
                 bill_payment = create_bill_transaction(bill_id=bill.id, vendor=vendor, products=transaction_products, services=service_products,
                                                        total_amount=total_amount, user=request.user)
+                if not bill_payment:
+                    log.app.error("Bill Creation Failed | Error in creating transaction | ")
+                    return Response("Bill Creation Failed due to errors in transactions", status=status.HTTP_400_BAD_REQUEST)
                 bill.save()
 
             audit_log_entry = audit_log(user=request.user,
