@@ -1763,7 +1763,7 @@ class UpdateInvoiceView(APIView):
                                 updated_items.append({"product_id": product_id, 
                                                       "quantity": quantity_in_tiles, 
                                                       "unit_price": unit_price,
-                                                      "cost_price": product.purchase_price})
+                                                      "unit_cost": product.purchase_price})
                                 if product.stock_quantity < extra_needed:
                                     return Response({"detail": f"Insufficient stock for product {product.product_name}."},
                                                     status=status.HTTP_400_BAD_REQUEST)
