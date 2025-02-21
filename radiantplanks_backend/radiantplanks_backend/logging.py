@@ -41,10 +41,10 @@ app_logger.add(
 trace_logger = logger.bind(name="TRACE")
 trace_logger.add(
     os.path.join(logs_dir, 'trace.log'),
-    rotation="5 MB",
+    rotation="10 MB",
     retention="7 days",
-    level="DEBUG",
-    filter=lambda record: record["level"].name == "DEBUG"
+    level="TRACE",
+    filter=lambda record: record["level"].name == "TRACE"
 )
 
 # Export loggers for easy import
