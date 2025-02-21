@@ -379,6 +379,11 @@ class CreateBackup(APIView):
                 "accounts_vendorpaymentdetails",
                 "inventory_productaccountmapping",
                 "customers_vendor",
+                "inventory_billtransactionmapping",
+                "inventory_invoicetransactionmapping",
+                "accounts_ownerpaymentdetails",
+                "customers_state",
+                "customers_city",
             ]
         wb = Workbook()
         for table_name, in tables:
