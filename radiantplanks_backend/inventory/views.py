@@ -107,7 +107,7 @@ def add_inventory_transaction(product_name, quantity, unit_cost, inventory_accou
             )
 
             # Credit: Assume it's an owner's equity or cash account (to offset the inventory addition)
-            owner_equity_account = Account.objects.filter(account_type='owner_equity').first()
+            owner_equity_account = Account.objects.filter(code='OWN-001').first()
             if not owner_equity_account:
                 log.app.error("No owner account for equity found")
                 raise ValueError("Owner equity account does not exist.")
@@ -138,11 +138,11 @@ def create_invoice_transaction(customer, invoice_id, products, total_amount, ser
     """
     try:
         # Fetch accounts
-        inventory_account = Account.objects.get(account_type='inventory')  # Inventory account
-        receivable_account = Account.objects.get(account_type='accounts_receivable')  # Accounts Receivable account
-        cogs_account = Account.objects.get(account_type='cost_of_goods_sold')  # Cost of Goods Sold account
-        sales_revenue_account = Account.objects.get(account_type='sales_income')  # Sales Revenue account
-        tax_amount_account = Account.objects.get(account_type='tax_payable')
+        inventory_account = Account.objects.get(code='INV-001', is_active=True)  # Inventory account
+        receivable_account = Account.objects.get(code='AR-001')  # Accounts Receivable account
+        cogs_account = Account.objects.get(code='COGS-001')  # Cost of Goods Sold account
+        sales_revenue_account = Account.objects.get(code='INC-001')  # Sales Revenue account
+        tax_amount_account = Account.objects.get(code='AP-002')
         untaxed_amount = total_amount - tax_amount
         # Create a new transaction
         with db_transaction.atomic():
@@ -211,7 +211,7 @@ def create_invoice_transaction(customer, invoice_id, products, total_amount, ser
                 tax_amount_account.balance += Decimal(tax_amount)
                 TransactionLine.objects.create(
                     transaction=transaction,
-                    account=Account.objects.get(account_type='tax_payable'),
+                    account=Account.objects.get(code='AP-002'),
                     description=f"Tax Payable for invoice to {customer.business_name}",
                     debit_amount=0,
                     credit_amount=tax_amount,
@@ -278,11 +278,11 @@ def update_invoice_transaction(customer, invoice_id, new_products, new_service_p
         all_transaction_lines = TransactionLine.objects.filter(transaction=mapping.transaction.id, is_active=True).all()
         original_receivable_amount = TransactionLine.objects.filter(transaction=mapping.transaction.id, account__account_type='accounts_receivable').first().debit_amount
         # Fetch relevant accounts
-        inventory_account = Account.objects.get(account_type='inventory')
-        receivable_account = Account.objects.get(account_type='accounts_receivable')
-        cogs_account = Account.objects.get(account_type='cost_of_goods_sold')
-        sales_revenue_account = Account.objects.get(account_type='sales_income')
-        tax_account = Account.objects.get(account_type='tax_payable')
+        inventory_account = Account.objects.get(code='INV-001')
+        receivable_account = Account.objects.get(code='AR-001')
+        cogs_account = Account.objects.get(code='COGS-001')
+        sales_revenue_account = Account.objects.get(code='INC-001')
+        tax_account = Account.objects.get(code='AP-002')
 
         with db_transaction.atomic():
             # Calculate original amounts from transaction lines
@@ -537,9 +537,9 @@ def create_bill_transaction(bill_id, vendor, products, services, total_amount, u
     If paid, do not increase accounts payable and reduce bank balance.
     """
     try:
-        inventory_account = Account.objects.get(account_type='inventory')  # Inventory account
-        payable_account = Account.objects.get(account_type='accounts_payable')  # Accounts Payable account
-        cogs_account = Account.objects.get(account_type='cost_of_goods_sold')
+        inventory_account = Account.objects.get(code='INV-001')  # Inventory account
+        payable_account = Account.objects.get(code='AP-001')  # Accounts Payable account
+        cogs_account = Account.objects.get(code='COGS-001')
         # Create a new transaction
         transaction = Transaction.objects.create(
             reference_number=f"BILL-{uuid.uuid4().hex[:6].upper()}",
@@ -1965,7 +1965,7 @@ class InvoicePaidView(APIView):
                 customer=customer,
                 defaults={'receivable_amount': Decimal("0.00"), 'advance_payment': Decimal("0.00")}
             )
-            accounts_recievable = Account.objects.get(account_type='accounts_receivable')
+            accounts_recievable = Account.objects.get(code='AR-001')
             credit_account = Account.objects.get(id=credit_account_id, is_active=True)
 
             if use_advanced_payment:
@@ -2036,7 +2036,7 @@ class InvoicePaidView(APIView):
                 for line in transactions_to_log:
                     TransactionLine.objects.create(
                         transaction=transaction,
-                        account=Account.objects.get(account_type="accounts_receivable"),
+                        account=Account.objects.get(code="AR-001"),
                         description=line["description"],
                         debit_amount=0,
                         credit_amount=line["credit_amount"],
@@ -3154,7 +3154,7 @@ class BillPaidView(APIView):
             vendor = Vendor.objects.get(vendor_id=vendor_id, is_active=True)
             payable, created = PayableTracking.objects.get_or_create(vendor=vendor,
                     defaults={'payable_amount': Decimal("0.00"), 'advance_payment': Decimal("0.00")})
-            accounts_payable = Account.objects.get(account_type='accounts_payable')
+            accounts_payable = Account.objects.get(code='AP-001', is_active=True)
             debit_account = Account.objects.get(id=debit_account_id, is_active=True)
 
             if use_advanced_payment:
@@ -3223,7 +3223,7 @@ class BillPaidView(APIView):
                 for line in transactions_to_log:
                     TransactionLine.objects.create(
                         transaction=transaction,
-                        account=Account.objects.get(account_type="accounts_payable"),
+                        account=Account.objects.get(code="AP-001"),
                         description=line["description"],
                         credit_amount=line["credit_amount"],
                         debit_amount=0,
@@ -3467,8 +3467,8 @@ class UpdateLostProductView(APIView):
             # Adjust inventory and financial transactions if quantity_lost or unit_cost changes
             if quantity_lost != lost_product.quantity_lost or unit_cost != lost_product.unit_cost:
                 # Fetch relevant accounts
-                inventory_account = Account.objects.get(account_type='inventory')
-                loss_account = Account.objects.get(account_type='other_expenses')
+                inventory_account = Account.objects.get(code='INV-001')
+                loss_account = Account.objects.get(code='MIS-001')
 
                 # Reverse the old transaction
                 old_total_loss = lost_product.total_loss
@@ -3559,8 +3559,8 @@ class DeleteLostProductView(APIView):
             lost_product = LostProduct.objects.get(id=lost_product_id)
 
             # Fetch relevant accounts
-            inventory_account = Account.objects.get(account_type='inventory')
-            loss_account = Account.objects.get(account_type='other_expenses')
+            inventory_account = Account.objects.get(code='INV-001')
+            loss_account = Account.objects.get(code='MIS-001')
 
             # Reverse the inventory and financial transactions
             with transaction.atomic():
