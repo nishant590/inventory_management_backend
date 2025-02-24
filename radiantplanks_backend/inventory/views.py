@@ -3,7 +3,7 @@ from rest_framework.permissions import IsAuthenticated
 from django.db import transaction
 from .models import (Invoice, InvoiceItem, Product, Estimate, 
                      EstimateItem, ProductAccountMapping, Bill, 
-                     BillItems, InvoiceTransactionMapping,
+                     BillItems, InvoiceTransactionMapping, LostProduct,
                      BillTransactionMapping)
 from .serializers import CategorySerializer, ProductSerializer
 from rest_framework.views import APIView
@@ -3282,3 +3282,305 @@ class BillPaidView(APIView):
             log.trace.trace(f"Error processing bill payments {traceback.format_exc()}")
             return Response({"detail": "Error processing payment."}, status=status.HTTP_400_BAD_REQUEST)
 
+
+class CreateLostProductView(APIView):
+    def post(self, request):
+        try:
+            # Extract data from the request
+            data = request.data
+            product_id = data.get('product')
+            quantity_lost = int(data.get('quantity_lost'))
+            reason = data.get('reason', 'damaged')
+            loss_date = data.get('loss_date', timezone.now().date())
+            invoice_id = data.get('invoice')
+            notes = data.get('notes', '')
+
+            # Fetch related objects
+            product = Product.objects.get(id=product_id)
+            created_by = request.user
+            invoice = Invoice.objects.get(id=invoice_id) if invoice_id else None
+            unit_cost = product.purchase_price
+
+            # Calculate total loss
+            total_loss = quantity_lost * unit_cost
+
+            # Deduct lost quantity from product stock
+            product.stock_quantity -= quantity_lost
+            product.save()
+
+            # Fetch relevant accounts
+            inventory_account = Account.objects.get(code='INV-001', is_active=True)
+            loss_account = Account.objects.get(code='MIS-001', is_active=True)
+
+            with transaction.atomic():
+                # Create LostProduct entry
+                lost_product = LostProduct.objects.create(
+                    product=product,
+                    quantity_lost=quantity_lost,
+                    unit_cost=unit_cost,
+                    total_loss=total_loss,
+                    reason=reason,
+                    loss_date=loss_date,
+                    invoice=invoice,
+                    notes=notes,
+                    created_by=created_by,
+                )
+
+                # Create a new transaction
+                transaction_obj = Transaction.objects.create(
+                    description=f"Loss of product {product.product_name}",
+                    created_by=created_by,
+                    date=loss_date,
+                    transaction_type='expense',
+                )
+
+                # Create transaction lines
+                TransactionLine.objects.create(
+                    transaction=transaction_obj,
+                    account=loss_account,
+                    debit_amount=total_loss,
+                    credit_amount=0,
+                    description=f"Loss due to {reason} for product {product.product_name}",
+                )
+
+                TransactionLine.objects.create(
+                    transaction=transaction_obj,
+                    account=inventory_account,
+                    debit_amount=0,
+                    credit_amount=total_loss,
+                    description=f"Inventory adjustment for lost product {product.product_name}",
+                )
+
+                # Update account balances
+                loss_account.balance += total_loss
+                inventory_account.balance -= total_loss
+                loss_account.save()
+                inventory_account.save()
+
+            # Prepare response
+            response_data = {
+                "id": lost_product.id,
+                "product": product.id,
+                "quantity_lost": quantity_lost,
+                "unit_cost": unit_cost,
+                "total_loss": total_loss,
+                "reason": reason,
+                "loss_date": loss_date,
+                "invoice": invoice.id if invoice else None,
+                "notes": notes,
+                "created_by": created_by.id,
+                "created_date": lost_product.created_date,
+            }
+
+            return Response(response_data, status=status.HTTP_201_CREATED)
+
+        except Product.DoesNotExist:
+            return Response({"detail": "Product not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Invoice.DoesNotExist:
+            return Response({"detail": "Invoice not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            log.trace.trace(f"Error occurred {traceback.format_exc()}")
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ListLostProductsView(APIView):
+    def get(self, request):
+        try:
+            # Fetch all LostProduct entries
+            lost_products = LostProduct.objects.all()
+
+            # Prepare response data
+            response_data = []
+            for lost_product in lost_products:
+                response_data.append({
+                    "id": lost_product.id,
+                    "product": lost_product.product.id,
+                    "quantity_lost": lost_product.quantity_lost,
+                    "unit_cost": float(lost_product.unit_cost),
+                    "total_loss": float(lost_product.total_loss),
+                    "reason": lost_product.reason,
+                    "loss_date": lost_product.loss_date,
+                    "invoice": lost_product.invoice.id if lost_product.invoice else None,
+                    "notes": lost_product.notes,
+                    "created_by": lost_product.created_by.id,
+                    "created_date": lost_product.created_date,
+                })
+
+            return Response(response_data, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        
+
+class LostProductDetailView(APIView):
+    def get(self, request, lost_product_id):
+        try:
+            # Fetch the LostProduct entry
+            lost_product = LostProduct.objects.get(id=lost_product_id)
+
+            # Prepare response data
+            response_data = {
+                "id": lost_product.id,
+                "product": lost_product.product.id,
+                "quantity_lost": lost_product.quantity_lost,
+                "unit_cost": float(lost_product.unit_cost),
+                "total_loss": float(lost_product.total_loss),
+                "reason": lost_product.reason,
+                "loss_date": lost_product.loss_date,
+                "invoice": lost_product.invoice.id if lost_product.invoice else None,
+                "notes": lost_product.notes,
+                "created_by": lost_product.created_by.id,
+                "created_date": lost_product.created_date,
+            }
+
+            return Response(response_data, status=status.HTTP_200_OK)
+
+        except LostProduct.DoesNotExist:
+            return Response({"detail": "LostProduct not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class UpdateLostProductView(APIView):
+    def put(self, request, lost_product_id):
+        try:
+            # Fetch the existing LostProduct entry
+            lost_product = LostProduct.objects.get(id=lost_product_id)
+
+            # Extract data from the request
+            data = request.data
+            product_id = data.get('product', lost_product.product.id)
+            quantity_lost = int(data.get('quantity_lost', lost_product.quantity_lost))
+            unit_cost = float(data.get('unit_cost', lost_product.unit_cost))
+            reason = data.get('reason', lost_product.reason)
+            loss_date = data.get('loss_date', lost_product.loss_date)
+            invoice_id = data.get('invoice', lost_product.invoice.id if lost_product.invoice else None)
+            notes = data.get('notes', lost_product.notes)
+
+            # Fetch related objects
+            product = Product.objects.get(id=product_id)
+            invoice = Invoice.objects.get(id=invoice_id) if invoice_id else None
+
+            # Calculate new total loss
+            new_total_loss = quantity_lost * unit_cost
+
+            # Adjust inventory and financial transactions if quantity_lost or unit_cost changes
+            if quantity_lost != lost_product.quantity_lost or unit_cost != lost_product.unit_cost:
+                # Fetch relevant accounts
+                inventory_account = Account.objects.get(account_type='inventory')
+                loss_account = Account.objects.get(account_type='other_expenses')
+
+                # Reverse the old transaction
+                old_total_loss = lost_product.total_loss
+                inventory_account.balance += old_total_loss
+                loss_account.balance -= old_total_loss
+                inventory_account.save()
+                loss_account.save()
+
+                # Deduct new lost quantity from product stock
+                product.stock_quantity += lost_product.quantity_lost  # Reverse old deduction
+                product.stock_quantity -= quantity_lost  # Apply new deduction
+                product.save()
+
+                # Create a new transaction for the updated loss
+                transaction_obj = Transaction.objects.create(
+                    description=f"Updated loss of product {product.product_name}",
+                    created_by=request.user,
+                )
+
+                # Create transaction lines
+                TransactionLine.objects.create(
+                    transaction=transaction_obj,
+                    account=loss_account,
+                    debit_amount=new_total_loss,
+                    credit_amount=0,
+                    description=f"Updated loss due to {reason} for product {product.product_name}",
+                )
+
+                TransactionLine.objects.create(
+                    transaction=transaction_obj,
+                    account=inventory_account,
+                    debit_amount=0,
+                    credit_amount=new_total_loss,
+                    description=f"Updated inventory adjustment for lost product {product.product_name}",
+                )
+
+                # Update account balances
+                loss_account.balance += new_total_loss
+                inventory_account.balance -= new_total_loss
+                loss_account.save()
+                inventory_account.save()
+
+            # Update the LostProduct entry
+            lost_product.product = product
+            lost_product.quantity_lost = quantity_lost
+            lost_product.unit_cost = unit_cost
+            lost_product.total_loss = new_total_loss
+            lost_product.reason = reason
+            lost_product.loss_date = loss_date
+            lost_product.invoice = invoice
+            lost_product.notes = notes
+            lost_product.updated_by = request.user
+            lost_product.save()
+
+            # Prepare response
+            response_data = {
+                "id": lost_product.id,
+                "product": product.id,
+                "quantity_lost": quantity_lost,
+                "unit_cost": unit_cost,
+                "total_loss": new_total_loss,
+                "reason": reason,
+                "loss_date": loss_date,
+                "invoice": invoice.id if invoice else None,
+                "notes": notes,
+                "created_by": lost_product.created_by.id,
+                "created_date": lost_product.created_date,
+                "updated_by": lost_product.updated_by.id,
+                "updated_date": lost_product.updated_date,
+            }
+
+            return Response(response_data, status=status.HTTP_200_OK)
+
+        except LostProduct.DoesNotExist:
+            return Response({"detail": "LostProduct not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Product.DoesNotExist:
+            return Response({"detail": "Product not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Invoice.DoesNotExist:
+            return Response({"detail": "Invoice not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        
+
+class DeleteLostProductView(APIView):
+    def delete(self, request, lost_product_id):
+        try:
+            # Fetch the existing LostProduct entry
+            lost_product = LostProduct.objects.get(id=lost_product_id)
+
+            # Fetch relevant accounts
+            inventory_account = Account.objects.get(account_type='inventory')
+            loss_account = Account.objects.get(account_type='other_expenses')
+
+            # Reverse the inventory and financial transactions
+            with transaction.atomic():
+                # Reverse inventory deduction
+                lost_product.product.stock_quantity += lost_product.quantity_lost
+                lost_product.product.save()
+
+                # Reverse account balances
+                inventory_account.balance += lost_product.total_loss
+                loss_account.balance -= lost_product.total_loss
+                inventory_account.save()
+                loss_account.save()
+
+                # Delete the LostProduct entry
+                lost_product.delete()
+
+            return Response({"detail": "LostProduct deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
+
+        except LostProduct.DoesNotExist:
+            return Response({"detail": "LostProduct not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        

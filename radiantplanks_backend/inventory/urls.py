@@ -27,6 +27,9 @@ from .views import (CategoryListCreateView,
                     BillPaidView,
                     SendEmailPdfToClient,
                     SendInvoiceRenderData,
+                    CreateLostProductView,
+                    ListLostProductsView,
+                    LostProductDetailView
                     )
 
 urlpatterns = [
@@ -66,4 +69,7 @@ urlpatterns = [
     path('bill/retrive/<int:id>/', RetrieveBillView.as_view(), name='bill-get'),
     path('bill/makepaid/', BillPaidView.as_view(), name='bill-paid'),
     
+    path('lost-product/create/', CreateLostProductView.as_view(), name='lost-product-create'),
+    path('lost-product/', ListLostProductsView.as_view(), name='lost-product-list'),
+    path('lost-product/vendor/<int:vendor_id>/', LostProductDetailView.as_view(), name='lost-product-list'),
 ]

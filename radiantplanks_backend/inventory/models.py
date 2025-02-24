@@ -257,4 +257,28 @@ class BillTransactionMapping(models.Model):
     is_active = models.BooleanField(default=True)
 
     def __str__(self):
-        return f"Mapping for Invoice {self.invoice_id}"
+        return f"Mapping for Invoice {self.bill_id}"
+    
+
+class LostProduct(models.Model):
+    LOSS_REASON_CHOICES = [
+        ('damaged', 'Damaged'),
+        ('other', 'Other'),
+    ]
+
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='lost_products')
+    quantity_lost = models.PositiveIntegerField()
+    unit_cost = models.DecimalField(max_digits=10, decimal_places=2, help_text="Cost per unit at the time of loss.")
+    total_loss = models.DecimalField(max_digits=10, decimal_places=2, editable=False, help_text="Calculated as quantity_lost * unit_cost.")
+    reason = models.CharField(max_length=50, choices=LOSS_REASON_CHOICES, default='damaged')
+    loss_date = models.DateField(auto_now_add=True)
+    invoice = models.ForeignKey(Invoice, on_delete=models.SET_NULL, null=True, blank=True, related_name='lost_products', help_text="Optional: Link to an invoice if the loss is related to a specific transaction.")
+    notes = models.TextField(null=True, blank=True, help_text="Additional details about the loss.")
+    created_by = models.ForeignKey(NewUser, on_delete=models.CASCADE, related_name='lost_products_created')
+    created_date = models.DateTimeField(auto_now_add=True)
+    updated_by = models.ForeignKey(NewUser, on_delete=models.SET_NULL, null=True, blank=True, related_name='lost_products_updated')
+    updated_date = models.DateTimeField(auto_now=True)
+
+
+    def __str__(self):
+        return f"Lost Product: {self.product.product_name} - Quantity: {self.quantity_lost} - Loss: {self.total_loss}"
