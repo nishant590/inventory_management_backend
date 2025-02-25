@@ -15,6 +15,7 @@ class Customer(models.Model):
     bcc_email = models.EmailField(blank=True, null=True)
     phone = models.CharField(max_length=15, null=True)
     mobile_number = models.CharField(max_length=15, null=True)
+    tax_exempt = models.BooleanField(default=False)
     # payments = models.CharField(max_length=20, choices=[('cash', 'Cash'), ('check', 'Check'),('credit card','Credit Card')], default="cash")
     # taxes = models.CharField(max_length=150)
     created_by = models.ForeignKey(NewUser, on_delete=models.SET_NULL, related_name='customer_created_by', null=True)

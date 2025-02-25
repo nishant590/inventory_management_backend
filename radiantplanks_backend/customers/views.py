@@ -42,6 +42,10 @@ class CustomerCreateView(APIView):
             errors['phone'] = "Phone number must be at least 10 characters long."
 
         # Validate addresses
+        tax_exempt = data.get('tax_exempt', False)
+        if isinstance(tax_exempt, str):
+            tax_exempt = tax_exempt.lower() == 'true'
+
         if not addresses_data:
             errors['addresses'] = "At least one address is required."
         else:
@@ -64,6 +68,7 @@ class CustomerCreateView(APIView):
                     business_name=data.get('business_name', f"{data['first_name']} {data['last_name']}"),
                     company=data.get('company', ''),
                     email=data['email'],
+                    tax_exempt=tax_exempt,
                     cc_email=data.get('cc_email', ''),
                     bcc_email=data.get('bcc_email', ''),
                     phone=data.get("phone",""),
@@ -122,7 +127,7 @@ class BulkCustomerCreateView(APIView):
             return Response({'error': f'Error reading file: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
 
         # Expected columns
-        required_columns = ['first_name', 'last_name', 'email', 'phone', 'address_type', 'street_add_1', 'street_add_2', 'city', 'state', 'postal_code', 'country']
+        required_columns = ['first_name', 'last_name', 'email', 'phone', 'address_type', 'street_add_1', 'street_add_2', 'city', 'state', 'postal_code', 'country', 'tax_exempt']
         missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:
             return Response({'error': f'Missing required columns: {missing_columns}'}, status=status.HTTP_400_BAD_REQUEST)
@@ -172,6 +177,8 @@ class BulkCustomerCreateView(APIView):
 
         successful_creates = 0
 
+        df['tax_exempt'] = df['tax_exempt'].apply(lambda x: x.lower() == 'true')
+
         try:
             with transaction.atomic():
                 # Bulk create customers and addresses
@@ -189,6 +196,7 @@ class BulkCustomerCreateView(APIView):
                         cc_email=row.cc_email if 'cc_email' in valid_rows.columns else '',
                         bcc_email=row.bcc_email if 'bcc_email' in valid_rows.columns else '',
                         phone=row.phone,
+                        tax_exempt=row.tax_exempt,
                         mobile_number=row.mobile_number if 'mobile_number' in valid_rows.columns else '',
                         created_by=request.user,
                         created_date=timezone.now(),
@@ -248,6 +256,7 @@ class CustomerListView(APIView):
                 "cc_email": customer.cc_email,
                 "bcc_email": customer.bcc_email,
                 "phone": customer.phone,
+                "tax_exempt": customer.tax_exempt,
                 "mobile_number": customer.mobile_number,
                 "is_active": customer.is_active,
                 "addresses": list(customer.addresses.values()),
@@ -292,6 +301,7 @@ class CustomerDetailView(APIView):
                 "business_name": customer.business_name,
                 "company": customer.company,
                 "email": customer.email,
+                "tax_exempt": customer.tax_exempt,
                 "cc_email": customer.cc_email,
                 "bcc_email": customer.bcc_email,
                 "phone": customer.phone,
@@ -317,7 +327,9 @@ class CustomerEditView(APIView):
             customer = Customer.objects.get(pk=customer_id)
         except Customer.DoesNotExist:
             return Response({"error": "Customer not found"}, status=status.HTTP_404_NOT_FOUND)
-
+        tax_exempt = data.get('tax_exempt', False)
+        if isinstance(tax_exempt, str):
+            tax_exempt = tax_exempt.lower() == 'true'
         # Update fields if provided
         customer.first_name = data.get("first_name", customer.first_name)
         customer.middle_name = data.get("middle_name", customer.middle_name)
@@ -328,6 +340,7 @@ class CustomerEditView(APIView):
         customer.cc_email = data.get("cc_email", customer.cc_email)
         customer.bcc_email = data.get("bcc_email", customer.bcc_email)
         customer.phone = data.get("phone", customer.phone)
+        customer.tax_exempt = tax_exempt
         customer.mobile_number = data.get("mobile_number", customer.phone)
         customer.updated_by = request.user
         customer.updated_date = timezone.now()
