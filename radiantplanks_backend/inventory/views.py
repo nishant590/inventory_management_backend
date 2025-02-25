@@ -277,7 +277,7 @@ def update_invoice_transaction(customer, invoice_id, new_products, new_service_p
         mapping = InvoiceTransactionMapping.objects.get(invoice_id=invoice_id, is_active=True)
         original_transaction = Transaction.objects.get(id=mapping.transaction.id, is_active=True)
         all_transaction_lines = TransactionLine.objects.filter(transaction=mapping.transaction.id, is_active=True).all()
-        original_receivable_amount = TransactionLine.objects.filter(transaction=mapping.transaction.id, account__account_type='accounts_receivable').first().debit_amount
+        original_receivable_amount = TransactionLine.objects.filter(transaction=mapping.transaction.id, account__code='AR-001', is_active=True).first().debit_amount
         # Fetch relevant accounts
         inventory_account = Account.objects.get(code='INV-001')
         receivable_account = Account.objects.get(code='AR-001')
@@ -338,6 +338,7 @@ def update_invoice_transaction(customer, invoice_id, new_products, new_service_p
             receivable, _ = ReceivableTracking.objects.get_or_create(customer=customer)
             receivable.receivable_amount -= original_receivable_amount
             receivable.save()
+            receivable, _ = ReceivableTracking.objects.get_or_create(customer=customer)
 
             
             inv_total_cost = Decimal('0.00')
@@ -3478,7 +3479,6 @@ class UpdateLostProductView(APIView):
             data = request.data
             product_id = data.get('product', lost_product.product.id)
             quantity_lost = int(data.get('quantity_lost', lost_product.quantity_lost))
-            unit_cost = float(data.get('unit_cost', lost_product.unit_cost))
             reason = data.get('reason', lost_product.reason)
             loss_date = data.get('loss_date', lost_product.loss_date)
             invoice_id = data.get('invoice', lost_product.invoice.id if lost_product.invoice else None)
@@ -3488,11 +3488,13 @@ class UpdateLostProductView(APIView):
             product = Product.objects.get(id=product_id)
             invoice = Invoice.objects.get(id=invoice_id) if invoice_id else None
 
+            unit_cost = product.purchase_price
+
             # Calculate new total loss
             new_total_loss = quantity_lost * unit_cost
 
             # Adjust inventory and financial transactions if quantity_lost or unit_cost changes
-            if quantity_lost != lost_product.quantity_lost or unit_cost != lost_product.unit_cost:
+            if quantity_lost != lost_product.quantity_lost:
                 # Fetch relevant accounts
                 inventory_account = Account.objects.get(code='INV-001')
                 loss_account = Account.objects.get(code='MIS-001')
