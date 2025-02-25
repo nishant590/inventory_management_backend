@@ -2338,6 +2338,7 @@ class SendInvoiceRenderData(APIView):
                     "product_type": item.product.product_type,
                     "sku": item.product.sku,
                     "dim": f'{round(item.product.tile_width)}" x {round(item.product.tile_length)}"' if item.product.tile_length and item.product.tile_width else "-",
+                    "description": item.description,
                     "quantity": item.quantity,
                     "unit_type": "box",
                     "unit_price": item.unit_price,
