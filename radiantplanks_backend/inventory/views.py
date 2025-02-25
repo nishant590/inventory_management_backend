@@ -3420,6 +3420,7 @@ class ListLostProductsView(APIView):
                 response_data.append({
                     "id": lost_product.id,
                     "product": lost_product.product.id,
+                    "product_name": lost_product.product.product_name,
                     "quantity_lost": lost_product.quantity_lost,
                     "unit_cost": float(lost_product.unit_cost),
                     "total_loss": float(lost_product.total_loss),
@@ -3447,6 +3448,7 @@ class LostProductDetailView(APIView):
             response_data = {
                 "id": lost_product.id,
                 "product": lost_product.product.id,
+                "product_name": lost_product.product.product_name,
                 "quantity_lost": lost_product.quantity_lost,
                 "unit_cost": float(lost_product.unit_cost),
                 "total_loss": float(lost_product.total_loss),
