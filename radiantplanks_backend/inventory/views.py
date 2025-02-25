@@ -7,6 +7,7 @@ from .models import (Invoice, InvoiceItem, Product, Estimate,
                      BillTransactionMapping)
 from .serializers import CategorySerializer, ProductSerializer
 from rest_framework.views import APIView
+from django.core.mail import EmailMessage
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
@@ -2446,9 +2447,12 @@ class SendEmailPdfToClient(APIView):
 
 
             # Send email with the PDF
-            send_email_with_pdf(email=invoice.customer_email,  email_body=email_html_body,
+            check_email = send_email_with_pdf(email=invoice.customer_email,  email_body=email_html_body,
                                 pdf_buffer=attachments, invoice_id=invoice.id,
                                 cc_email=cc_email, bcc_email=bcc_email, is_new_method=True)
+            if not check_email:
+                log.app.error("Error while sending email")
+                return Response({"message": "Error while sending email"}, status=status.HTTP_400_BAD_REQUEST)
             audit_log_entry = audit_log(user=request.user,
                               action="Invoice Sent", 
                               ip_add=request.META.get('HTTP_X_FORWARDED_FOR'), 
@@ -2611,26 +2615,46 @@ def generate_pdf(html_string, pdf_path):
 
 
 def send_email_with_pdf(email, pdf_buffer, email_body, invoice_id, cc_email = [], bcc_email = [], is_new_method=False):
-    from django.core.mail import EmailMessage
     # html_content = render_to_string('mail_template.html')
+    try:
+        email = EmailMessage(
+            subject=f"Invoice #{invoice_id}",
+            body=email_body,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[email],
+            cc=cc_email,
+            bcc=bcc_email
+        )
+        email.content_subtype = 'html'
+        if is_new_method:
+            if pdf_buffer:
+                email.attach(f'Invoice_{invoice_id}.pdf', pdf_buffer.read(), 'application/pdf')
+                email.send()
+        else:
+            if pdf_buffer:
+                email.attach(f'Invoice_{invoice_id}.pdf', pdf_buffer.getvalue(), 'application/pdf')
+                email.send()
+        return True
+    except Exception as e:
+        log.trace.trace(f"Error while sending email | {invoice_id} | {traceback.format_exc()}")
+        return False
 
-    email = EmailMessage(
-        subject=f"Invoice #{invoice_id}",
-        body=email_body,
-        from_email=settings.DEFAULT_FROM_EMAIL,
-        to=[email],
-        cc=cc_email,
-        bcc=bcc_email
-    )
-    email.content_subtype = 'html'
-    if is_new_method:
-        if pdf_buffer:
-            email.attach(f'Invoice_{invoice_id}.pdf', pdf_buffer.read(), 'application/pdf')
+
+class TestEmailView(APIView):
+    def get(self, request):
+        try:
+            email = EmailMessage(
+                subject="Test Email",
+                body="This is a test email.",
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                to=["nishant@pruthatek.com"]
+            )
             email.send()
-    else:
-        if pdf_buffer:
-            email.attach(f'Invoice_{invoice_id}.pdf', pdf_buffer.getvalue(), 'application/pdf')
-            email.send()
+            return Response({"message": "Email sent successfully"}, status=status.HTTP_200_OK)
+        except Exception as e:
+            log.trace.trace(f"Error while sending email | | {traceback.format_exc()}")
+            return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 
 class DownloadInvoiceView(APIView):
