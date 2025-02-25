@@ -1800,7 +1800,7 @@ class UpdateInvoiceView(APIView):
                             updated_items.append({"product_id": product.id, 
                                                   "quantity": quantity_in_tiles, 
                                                   "unit_price": unit_price,
-                                                  "unit_cost":[+product.purchase_price]})
+                                                  "unit_cost":product.purchase_price})
                             product.save()
                             # Add new invoice item
                             InvoiceItem.objects.create(

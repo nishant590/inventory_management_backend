@@ -19,6 +19,9 @@ var/
 .installed.cfg
 *.egg
 
+.dbeaver
+.project
+
 # Django
 *.log
 local_settings.py
