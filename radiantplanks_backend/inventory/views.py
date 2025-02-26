@@ -151,7 +151,7 @@ def create_invoice_transaction(customer, invoice_id, products, total_amount, ser
                 reference_number=f"INV-{uuid.uuid4().hex[:6].upper()}",
                 transaction_type='income',
                 date=datetime.now(),
-                description=f"Invoice for customer {customer.business_name}",
+                description=f"Invoice for customer {customer.business_name}, invoice-code {invoice_id}",
                 created_by=user
             )
             
@@ -468,7 +468,7 @@ def delete_invoice_transaction(invoice_id, user):
                 transaction.save()
 
                 # Reverse account balances for related transaction lines
-                for line in TransactionLine.objects.filter(transaction=transaction):
+                for line in TransactionLine.objects.filter(transaction=transaction, is_active=True):
                     account = line.account
                     #Assets
                     if account.account_type in ['inventory', 'accounts_receivable', "cash", "bank", "fixed_assets", "other_current_assets"]:
@@ -547,7 +547,7 @@ def create_bill_transaction(bill_id, vendor, products, services, total_amount, u
             reference_number=f"BILL-{uuid.uuid4().hex[:6].upper()}",
             transaction_type='journal',
             date=datetime.now(),
-            description=f"Bill for vendor {vendor.business_name}",
+            description=f"Bill for vendor {vendor.business_name}, bill ID {bill_id}",
             created_by=user
         )
 
@@ -1382,13 +1382,13 @@ class CreateInvoiceView(APIView):
                 customer_email_cc = data.get("customer_email_cc")
                 customer_email_bcc = data.get("customer_email_bcc")
                 billing_address_street_1 = data.get("billing_address_street_1","")
-                billing_address_street_2 = data.get("billing_address_street_2","")
+                billing_address_street_2 = data.get("billing_address_street_2",None)
                 billing_address_city = data.get("billing_address_city","")
                 billing_address_state = data.get("billing_address_state","")
                 billing_address_postal_code = data.get("billing_address_postal_code","")
                 billing_address_country = data.get("billing_address_country","")
                 shipping_address_street_1 = data.get("shipping_address_street_1","")
-                shipping_address_street_2 = data.get("shipping_address_street_2","")
+                shipping_address_street_2 = data.get("shipping_address_street_2",None)
                 shipping_address_city = data.get("shipping_address_city","")
                 shipping_address_state = data.get("shipping_address_state","")
                 shipping_address_postal_code = data.get("shipping_address_postal_code","")
@@ -1513,7 +1513,6 @@ class CreateInvoiceView(APIView):
 
                 # Update the invoice's total amount after processing all items
                 # invoice.total_amount = total_amount
-                invoice.save()
                 invoice_transactions = create_invoice_transaction(customer=customer, invoice_id=invoice.id, 
                                     products=transaction_products, 
                                     total_amount=total_amount, 
@@ -1523,6 +1522,7 @@ class CreateInvoiceView(APIView):
                 if not invoice_transactions:
                     log.app.error("Invoice Creation Failed | Error in creating transaction | ")
                     return Response("Invoice Creation Failed due to errors in transactions", status=status.HTTP_400_BAD_REQUEST)
+                invoice.save()
             audit_log_entry = audit_log(user=request.user,
                               action="Invoice created", 
                               ip_add=request.META.get('HTTP_X_FORWARDED_FOR'), 
@@ -3331,6 +3331,9 @@ class CreateLostProductView(APIView):
             total_loss = quantity_lost * unit_cost
 
             # Deduct lost quantity from product stock
+            if product.stock_quantity < quantity_lost:
+                log.app.error(f"Insufficient stock for product {product.product_name}")
+                return Response({"detail": "Insufficient stock for product."}, status=status.HTTP_400_BAD_REQUEST)
             product.stock_quantity -= quantity_lost
             product.save()
 
@@ -3339,7 +3342,15 @@ class CreateLostProductView(APIView):
             loss_account = Account.objects.get(code='MIS-001', is_active=True)
 
             with transaction.atomic():
-                # Create LostProduct entry
+                # Create a new transaction
+                transaction_obj = Transaction.objects.create(
+                    description=f"Loss of product {product.product_name}",
+                    created_by=created_by,
+                    date=loss_date,
+                    reference_number=f"LOSS-{uuid.uuid4().hex[:6].upper()}",
+                    transaction_type='expense',
+                )
+
                 lost_product = LostProduct.objects.create(
                     product=product,
                     quantity_lost=quantity_lost,
@@ -3348,16 +3359,9 @@ class CreateLostProductView(APIView):
                     reason=reason,
                     loss_date=loss_date,
                     invoice=invoice,
+                    transaction = transaction_obj,
                     notes=notes,
                     created_by=created_by,
-                )
-
-                # Create a new transaction
-                transaction_obj = Transaction.objects.create(
-                    description=f"Loss of product {product.product_name}",
-                    created_by=created_by,
-                    date=loss_date,
-                    transaction_type='expense',
                 )
 
                 # Create transaction lines
@@ -3470,10 +3474,10 @@ class LostProductDetailView(APIView):
 
 
 class UpdateLostProductView(APIView):
-    def put(self, request, lost_product_id):
+    def put(self, request, id):
         try:
             # Fetch the existing LostProduct entry
-            lost_product = LostProduct.objects.get(id=lost_product_id)
+            lost_product = LostProduct.objects.get(id=id)
 
             # Extract data from the request
             data = request.data
@@ -3487,6 +3491,7 @@ class UpdateLostProductView(APIView):
             # Fetch related objects
             product = Product.objects.get(id=product_id)
             invoice = Invoice.objects.get(id=invoice_id) if invoice_id else None
+            transaction_obj = Transaction.objects.get(id=lost_product.transaction.id)
 
             unit_cost = product.purchase_price
 
@@ -3512,10 +3517,9 @@ class UpdateLostProductView(APIView):
                 product.save()
 
                 # Create a new transaction for the updated loss
-                transaction_obj = Transaction.objects.create(
-                    description=f"Updated loss of product {product.product_name}",
-                    created_by=request.user,
-                )
+                transaction_obj.description = f"Updated loss of product {product.product_name}"
+
+                old_transaction_lines = TransactionLine.objects.filter(transaction=transaction_obj, is_active=True).delete()
 
                 # Create transaction lines
                 TransactionLine.objects.create(
@@ -3538,6 +3542,7 @@ class UpdateLostProductView(APIView):
                 loss_account.balance += new_total_loss
                 inventory_account.balance -= new_total_loss
                 loss_account.save()
+                transaction_obj.save()
                 inventory_account.save()
 
             # Update the LostProduct entry
@@ -3582,15 +3587,17 @@ class UpdateLostProductView(APIView):
         
 
 class DeleteLostProductView(APIView):
-    def delete(self, request, lost_product_id):
+    def delete(self, request, id):
         try:
             # Fetch the existing LostProduct entry
-            lost_product = LostProduct.objects.get(id=lost_product_id)
+            lost_product = LostProduct.objects.get(id=id)
 
             # Fetch relevant accounts
             inventory_account = Account.objects.get(code='INV-001')
             loss_account = Account.objects.get(code='MIS-001')
 
+            transaction_details = Transaction.objects.filter(id=lost_product.transaction.id, is_active=True).first()
+            transaction_lines = TransactionLine.objects.filter(transaction=transaction_details, is_active=True) 
             # Reverse the inventory and financial transactions
             with transaction.atomic():
                 # Reverse inventory deduction
@@ -3602,14 +3609,17 @@ class DeleteLostProductView(APIView):
                 loss_account.balance -= lost_product.total_loss
                 inventory_account.save()
                 loss_account.save()
-
                 # Delete the LostProduct entry
                 lost_product.delete()
+                transaction_lines.delete()
+                transaction_details.delete()
 
             return Response({"detail": "LostProduct deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
 
         except LostProduct.DoesNotExist:
+            log.app.error("LostProduct Not found")
             return Response({"detail": "LostProduct not found."}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
+            log.trace.trace(f"Error occurred {traceback.format_exc()}")
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         

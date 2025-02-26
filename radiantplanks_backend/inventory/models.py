@@ -275,7 +275,7 @@ class LostProduct(models.Model):
     loss_date = models.DateField(auto_now_add=True)
     invoice = models.ForeignKey(Invoice, on_delete=models.SET_NULL, null=True, blank=True, related_name='lost_products', help_text="Optional: Link to an invoice if the loss is related to a specific transaction.")
     notes = models.TextField(null=True, blank=True, help_text="Additional details about the loss.")
-    # transaction_map = models.ForeignKey(Transaction, on_delete=models.CASCADE, related_name='lost-product-transaction')
+    transaction = models.ForeignKey(Transaction, on_delete=models.CASCADE, related_name='lost_product')
     created_by = models.ForeignKey(NewUser, on_delete=models.CASCADE, related_name='lost_products_created')
     created_date = models.DateTimeField(auto_now_add=True)
     updated_by = models.ForeignKey(NewUser, on_delete=models.SET_NULL, null=True, blank=True, related_name='lost_products_updated')

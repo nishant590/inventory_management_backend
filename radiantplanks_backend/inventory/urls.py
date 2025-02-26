@@ -30,6 +30,8 @@ from .views import (CategoryListCreateView,
                     CreateLostProductView,
                     ListLostProductsView,
                     LostProductDetailView,
+                    UpdateLostProductView,
+                    DeleteLostProductView,
 
                     TestEmailView,
                     )
@@ -73,7 +75,9 @@ urlpatterns = [
     
     path('lost-product/create/', CreateLostProductView.as_view(), name='lost-product-create'),
     path('lost-product/', ListLostProductsView.as_view(), name='lost-product-list'),
-    path('lost-product/vendor/<int:vendor_id>/', LostProductDetailView.as_view(), name='lost-product-list'),
+    # path('lost-product/vendor/<int:vendor_id>/', LostProductDetailView.as_view(), name='lost-product-list'),
+    path('lost-product/update/<int:id>/', UpdateLostProductView.as_view(), name='lost-product-update'),
+    path('lost-product/delete/<int:id>/', DeleteLostProductView.as_view(), name='lost-product-delete'),
 
     path('test/email-server/', TestEmailView.as_view(), name='test-email-server'),
 ]
