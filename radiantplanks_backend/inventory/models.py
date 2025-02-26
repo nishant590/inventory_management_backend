@@ -95,6 +95,7 @@ class Invoice(models.Model):
         ("partially_paid", "Partially Paid"),
         ("paid", "Paid"),
     )
+    # invoice_code = models.IntegerField(default=0)
     customer = models.ForeignKey(Customer, on_delete=models.CASCADE)
     customer_email = models.CharField(max_length=100, null=True)
     customer_email_cc = models.CharField(max_length=255, null=True, blank=True)  # For CC/BCC
@@ -136,7 +137,7 @@ class Invoice(models.Model):
     is_active = models.BooleanField(default=True)
 
     def __str__(self):
-        return f"Invoice {self.invoice_number} - Customer {self.customer} - Total {self.total_amount}"
+        return f"Invoice {self.invoice_code} - Customer {self.customer} - Total {self.total_amount}"
 
 
 class InvoiceItem(models.Model):
@@ -274,6 +275,7 @@ class LostProduct(models.Model):
     loss_date = models.DateField(auto_now_add=True)
     invoice = models.ForeignKey(Invoice, on_delete=models.SET_NULL, null=True, blank=True, related_name='lost_products', help_text="Optional: Link to an invoice if the loss is related to a specific transaction.")
     notes = models.TextField(null=True, blank=True, help_text="Additional details about the loss.")
+    # transaction_map = models.ForeignKey(Transaction, on_delete=models.CASCADE, related_name='lost-product-transaction')
     created_by = models.ForeignKey(NewUser, on_delete=models.CASCADE, related_name='lost_products_created')
     created_date = models.DateTimeField(auto_now_add=True)
     updated_by = models.ForeignKey(NewUser, on_delete=models.SET_NULL, null=True, blank=True, related_name='lost_products_updated')
