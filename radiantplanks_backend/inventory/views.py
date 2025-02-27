@@ -632,7 +632,7 @@ def delete_bill_transaction(bill_id, user):
     """
     try:
         # Fetch the invoice transactions
-        bill_transactions = InvoiceTransactionMapping.objects.filter(invoice_id=bill_id, is_active=True)
+        bill_transactions = BillTransactionMapping.objects.filter(bill_id=bill_id, is_active=True)
 
         if not bill_transactions.exists():
             log.app.warning(f"No active transactions found for Invoice ID: {bill_id}")
@@ -648,7 +648,7 @@ def delete_bill_transaction(bill_id, user):
                 transaction.save()
 
                 # Reverse account balances for related transaction lines
-                for line in TransactionLine.objects.filter(transaction=transaction):
+                for line in TransactionLine.objects.filter(transaction=transaction, is_active=True):
                     account = line.account
                     #Assets
                     if account.account_type in ['inventory', 'accounts_receivable', "cash", "bank", "fixed_assets", "other_current_assets"]:
@@ -700,9 +700,9 @@ def delete_bill_transaction(bill_id, user):
                 mapping.save()
 
             # Update receivable tracking
-            receivable_tracking = ReceivableTracking.objects.filter(customer=transaction.customer).first()
+            receivable_tracking = PayableTracking.objects.filter(customer=transaction.customer).first()
             if receivable_tracking:
-                receivable_tracking.receivable_amount -= Decimal(transaction.amount)
+                receivable_tracking.payable_amount -= Decimal(transaction.amount)
                 receivable_tracking.save()
 
         log.app.info(f"Invoice {bill_id} deleted successfully.")
@@ -1553,7 +1553,7 @@ class ListInvoicesView(APIView):
 
         invoices = Invoice.objects.filter(is_active=True).values(
             "id", "customer__business_name", "customer__customer_id",  "customer_email", "customer__mobile_number", "total_amount", "unpaid_amount", "bill_date", "due_date", "payment_status"
-        )
+        ).order_by("-bill_date")
         invoice_list = list(invoices)  # Convert queryset to list of dicts
         return Response(invoice_list, status=status.HTTP_200_OK)
 
@@ -1951,6 +1951,7 @@ class InvoicePaidView(APIView):
             # Get the request data
             invoices_data = request.data.get("invoices", [])  # List of invoice IDs and amounts
             payment_amount = Decimal(request.data.get("payment_amount"))
+            payment_amount = round(payment_amount, 2)
             # payment_details = request.data.get("payment_details", {}) # JSON with method, transaction ID, etc.
             customer_id = request.data.get("customer_id")
             credit_account_id = request.data.get("credit_account_id")  # Bank/Cash account ID
@@ -1985,6 +1986,7 @@ class InvoicePaidView(APIView):
                 for invoice_data in invoices_data:
                     invoice_id = invoice_data.get("invoice_id")
                     allocated_amount = Decimal(invoice_data.get("allocated_amount", 0))
+                    allocated_amount = round(allocated_amount,2)
 
                     if allocated_amount <= 0:
                         continue  # Skip invalid or zero allocations
@@ -1999,7 +2001,7 @@ class InvoicePaidView(APIView):
                     # Update invoice
                     invoice.paid_amount += payment_for_invoice
                     invoice.unpaid_amount -= payment_for_invoice
-                    invoice.payment_status = "paid" if invoice.unpaid_amount == 0 else "partially_paid"
+                    invoice.payment_status = "paid" if invoice.unpaid_amount == Decimal(0) else "partially_paid"
 
                     # Add to total allocated
                     total_allocated += payment_for_invoice
@@ -2040,8 +2042,8 @@ class InvoicePaidView(APIView):
                         transaction=transaction,
                         account=Account.objects.get(code="AR-001"),
                         description=line["description"],
-                        debit_amount=0,
-                        credit_amount=line["credit_amount"],
+                        debit_amount=line['credit_amount'],
+                        credit_amount=line["debit_amount"],
                     )
 
                 # Log credit to bank/cash account
@@ -3053,7 +3055,7 @@ class ListVendorBillsView(APIView):
             "vendor__vendor_id", "vendor__email", 
             "total_amount", "unpaid_amount", "paid_amount",
             "bill_date", "due_date", "payment_status"
-        )
+        ).order_by('-bill_date')
         bill_list = list(bills)  # Convert queryset to list of dicts
         return Response(bill_list, status=status.HTTP_200_OK)
 
@@ -3169,6 +3171,7 @@ class BillPaidView(APIView):
             # Get the request data
             bills_data = request.data.get("bills", [])  # List of bill IDs and amounts
             payment_amount = Decimal(request.data.get("payment_amount"))
+            payment_amount = round(payment_amount,2)
             vendor_id = request.data.get("vendor_id")
             debit_account_id = request.data.get("debit_account_id")  # Bank/Cash account ID
             use_advanced_payment = request.data.get("use_advanced_payment", False)
@@ -3196,6 +3199,7 @@ class BillPaidView(APIView):
                 for bill_data in bills_data:
                     bill_id = bill_data.get("bill_id")
                     allocated_amount = Decimal(bill_data.get("allocated_amount", 0))
+                    allocated_amount = round(allocated_amount, 2)
 
                     if allocated_amount <= 0:
                         continue  # Skip invalid or zero allocations
@@ -3250,9 +3254,9 @@ class BillPaidView(APIView):
                     TransactionLine.objects.create(
                         transaction=transaction,
                         account=Account.objects.get(code="AP-001"),
-                        description=line["description"],
-                        credit_amount=line["credit_amount"],
-                        debit_amount=0,
+                        description=f"Payment for bill {bill.id}",
+                        debit_amount=payment_for_bill,
+                        credit_amount=0,
                     )
 
                 # Log debit from bank/cash account
