@@ -807,6 +807,7 @@ class GetAllOwnerTransactionsAPI(APIView):
             transaction_data.append({
                 'id': transaction.id,
                 'amount': transaction.payment_amount,
+                'transaction_type': transaction.transaction_type,
                 'description': transaction.description,
                 'transaction_reference_id': transaction.transaction_reference_id,
                 'payment_method': transaction.payment_method,

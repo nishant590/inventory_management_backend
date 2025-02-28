@@ -165,7 +165,7 @@ class OwnerPaymentDetails(models.Model):
     @classmethod
     def update_old_records(cls):
         """Updates old records where money_flag is NULL."""
-        cls.objects.filter(money_flag__isnull=True).update(
+        cls.objects.filter(money_flag=1).update(
             money_flag=Case(
                 When(transaction_type="money_added", then=Value(1)),
                 When(transaction_type="money_removed", then=Value(0)),
