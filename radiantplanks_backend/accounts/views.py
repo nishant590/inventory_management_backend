@@ -5,6 +5,8 @@ from .models import Account, ReceivableTracking, Transaction, TransactionLine, P
 from django.core.exceptions import ValidationError
 from django.db.models import Sum, Q
 from django.http import JsonResponse
+from rest_framework.pagination import PageNumberPagination
+from django.core.paginator import Paginator, EmptyPage
 from customers.models import Customer, Vendor
 from rest_framework.permissions import IsAuthenticated
 from decimal import Decimal
@@ -751,6 +753,7 @@ class OwnerContributionAPI(APIView):
                     transaction_reference_id=transaction_reference,
                     payment_method=payment_method,
                     payment_amount=amount,
+                    money_flag=1,
                     payment_date=contribution_date)
 
                 # Update account balances
@@ -808,6 +811,7 @@ class GetAllOwnerTransactionsAPI(APIView):
                 'transaction_reference_id': transaction.transaction_reference_id,
                 'payment_method': transaction.payment_method,
                 'payment_date': transaction.payment_date,
+                'money_flag': transaction.money_flag, 
                 'credited_account': {
                     'id': credited_account.id if credited_account else None,
                     'name': credited_account.name if credited_account else None,
@@ -873,6 +877,7 @@ class OwnerTakeOutMoneyAPI(APIView):
                     transaction_reference_id=transaction_reference,
                     payment_method=payment_method,
                     payment_amount=amount,
+                    money_flag=0,
                     payment_date=withdrawal_date)
 
                 # Update account balances
@@ -1023,3 +1028,58 @@ class EditOwnerTransactionAPI(APIView):
 
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        
+
+class CustomPagination(PageNumberPagination):
+    page_size = 10  # Default page size
+    page_size_query_param = 'page_size'  # Allow client to override the page size
+    max_page_size = 100  # Maximum page size
+
+class TransactionListView(APIView):
+    def get(self, request):
+        # Fetch all transactions sorted by date and created_at in descending order
+        transactions = Transaction.objects.all().order_by('-date', '-created_at')
+
+        # Paginate the transactions
+        paginator = CustomPagination()
+        paginated_transactions = paginator.paginate_queryset(transactions, request)
+
+        # Construct the response data
+        response_data = []
+        for transaction in paginated_transactions:
+            # Fetch related OwnerPaymentDetails for the transaction
+            owner_payment_details = OwnerPaymentDetails.objects.filter(transaction=transaction).first()
+
+            # Build the transaction dictionary
+            transaction_data = {
+                'id': transaction.id,
+                'reference_number': transaction.reference_number,
+                'transaction_type': transaction.transaction_type,
+                'date': transaction.date,
+                'description': transaction.description,
+                'is_reconciled': transaction.is_reconciled,
+                'tax_amount': str(transaction.tax_amount),  # Convert Decimal to string for JSON serialization
+                'attachment': transaction.attachment,
+                'is_active': transaction.is_active,
+                'created_by': transaction.created_by.id,  # Assuming created_by is a ForeignKey
+                'created_at': transaction.created_at,
+                'updated_at': transaction.updated_at,
+                'owner_payment_details': None,
+            }
+
+            # Add OwnerPaymentDetails if it exists
+            if owner_payment_details:
+                transaction_data['owner_payment_details'] = {
+                    'id': owner_payment_details.id,
+                    'transaction_type': owner_payment_details.transaction_type,
+                    'description': owner_payment_details.description,
+                    'payment_method': owner_payment_details.payment_method,
+                    'transaction_reference_id': owner_payment_details.transaction_reference_id,
+                    'payment_amount': str(owner_payment_details.payment_amount),  # Convert Decimal to string
+                    'payment_date': owner_payment_details.payment_date,
+                }
+
+            response_data.append(transaction_data)
+
+        # Return the paginated response
+        return paginator.get_paginated_response(response_data)

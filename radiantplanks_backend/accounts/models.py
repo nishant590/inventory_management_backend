@@ -1,5 +1,6 @@
 from django.db import models
 from django.core.validators import MinValueValidator
+from django.db.models import Case, When, Value, IntegerField
 from decimal import Decimal
 from authentication.models import NewUser
 from datetime import datetime, timedelta
@@ -154,7 +155,25 @@ class OwnerPaymentDetails(models.Model):
     transaction_reference_id = models.CharField(max_length=100, null=True, blank=True)  # Bank
     payment_amount = models.DecimalField(max_digits=15, decimal_places=2)
     payment_date = models.DateField()
+    money_flag = models.IntegerField(default=1)
     
+    def save(self, *args, **kwargs):
+        """Ensure money_flag is correctly set before saving."""
+        self.money_flag = 1 if self.transaction_type == "money_added" else 0
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def update_old_records(cls):
+        """Updates old records where money_flag is NULL."""
+        cls.objects.filter(money_flag__isnull=True).update(
+            money_flag=Case(
+                When(transaction_type="money_added", then=Value(1)),
+                When(transaction_type="money_removed", then=Value(0)),
+                default=Value(1),
+                output_field=IntegerField(),
+            )
+        )
+
     def __str__(self):
         return f"Payment {self.id} - {self.payment_method}"
 
