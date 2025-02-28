@@ -1952,7 +1952,6 @@ class InvoicePaidView(APIView):
             invoices_data = request.data.get("invoices", [])  # List of invoice IDs and amounts
             payment_amount = Decimal(request.data.get("payment_amount"))
             payment_amount = round(payment_amount, 2)
-            invoice_payment_date = request.data.get('payment_date')
             # payment_details = request.data.get("payment_details", {}) # JSON with method, transaction ID, etc.
             customer_id = request.data.get("customer_id")
             credit_account_id = request.data.get("credit_account_id")  # Bank/Cash account ID
@@ -1987,6 +1986,9 @@ class InvoicePaidView(APIView):
                 for invoice_data in invoices_data:
                     invoice_id = invoice_data.get("invoice_id")
                     allocated_amount = Decimal(invoice_data.get("allocated_amount", 0))
+                    invoice_payment_date = invoice_data.get('payment_date')
+                    if not invoice_payment_date:
+                        invoice_payment_date = datetime.now().date()
                     allocated_amount = round(allocated_amount,2)
 
                     if allocated_amount <= 0:
@@ -3174,7 +3176,6 @@ class BillPaidView(APIView):
             payment_amount = Decimal(request.data.get("payment_amount"))
             payment_amount = round(payment_amount,2)
             vendor_id = request.data.get("vendor_id")
-            bill_payment_date = request.data.get("payment_date")
             debit_account_id = request.data.get("debit_account_id")  # Bank/Cash account ID
             use_advanced_payment = request.data.get("use_advanced_payment", False)
 
@@ -3200,6 +3201,9 @@ class BillPaidView(APIView):
             with db_transaction.atomic():
                 for bill_data in bills_data:
                     bill_id = bill_data.get("bill_id")
+                    bill_payment_date = bill_data.get("payment_date")
+                    if not bill_payment_date:
+                        bill_payment_date = datetime.now().date()
                     allocated_amount = Decimal(bill_data.get("allocated_amount", 0))
                     allocated_amount = round(allocated_amount, 2)
 
