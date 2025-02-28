@@ -114,8 +114,8 @@ class Invoice(models.Model):
     shipping_address_country = models.CharField(max_length=100, null=True, blank=True)  # shipping address
     tags = models.CharField(max_length=255, null=True, blank=True)  # Tags field
     terms = models.TextField(null=True, blank=True)  # Terms field
-    bill_date = models.DateField(default=timezone.now)  # Redundant, could be removed
-    due_date = models.DateField(default=timezone.now)  # Due date
+    bill_date = models.DateTimeField(default=timezone.now)  # Redundant, could be removed
+    due_date = models.DateTimeField(default=timezone.now)  # Due date
     payment_date = models.DateField(null=True, blank=True)  # Payment date
     # invoice_number = models.CharField(max_length=50, unique=True)  # Invoice num
     message_on_invoice = models.TextField(null=True, blank=True)  # Message on invoice
@@ -138,7 +138,7 @@ class Invoice(models.Model):
     is_active = models.BooleanField(default=True)
 
     def __str__(self):
-        return f"Invoice {self.invoice_code} - Customer {self.customer} - Total {self.total_amount}"
+        return f"Invoice {self.id} - Customer {self.customer} - Total {self.total_amount}"
 
 
 class InvoiceItem(models.Model):
@@ -209,8 +209,8 @@ class Bill(models.Model):
     bill_number = models.CharField(max_length=255, null=True, blank=True)
     tags = models.CharField(max_length=255, null=True, blank=True)
     terms = models.TextField(null=True, blank=True)
-    bill_date = models.DateField(default=timezone.now)
-    due_date = models.DateField(default=timezone.now)
+    bill_date = models.DateTimeField(default=timezone.now)
+    due_date = models.DateTimeField(default=timezone.now)
     payment_date = models.DateField(null=True, blank=True)
     total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     paid_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
