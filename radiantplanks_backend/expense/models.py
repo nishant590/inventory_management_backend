@@ -10,7 +10,7 @@ class Expense(models.Model):
     expense_number = models.CharField(max_length=255, unique=True, null=True, blank=True)
     expense_account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name='expense_account')
     tags = models.CharField(max_length=255, null=True, blank=True)
-    payment_date = models.DateTimeField(default=timezone.now)
+    payment_date = models.DateField(default=timezone.now)
     total_amount = models.DecimalField(max_digits=10, decimal_places=2)
     is_paid = models.BooleanField(default=False)
     memo = models.TextField(null=True, blank=True)

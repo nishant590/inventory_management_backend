@@ -945,7 +945,7 @@ class ProductCreateView(APIView):
         return area_in_sq_feet
 
 
-    def calculate_stock_quantity(self, quantity=None, unit=None):
+    def calculate_stock_quantity(self, quantity=0, unit=None):
         if unit == "box":
             return quantity * 1  # 10 tiles per box
         elif unit == "pallet":
@@ -1023,12 +1023,12 @@ class ProductCreateView(APIView):
         else:
             tile_area = None
 
-        stock_quantity = None
+        stock_quantity = 0
         if product_type == "product":
             stock_quantity = self.calculate_stock_quantity(quantity, unit)
-            if stock_quantity is None:
-                return Response({"detail": "Provide either box_quantity or pallet_quantity."},
-                                status=status.HTTP_400_BAD_REQUEST)
+            # if stock_quantity is None:
+            #     return Response({"detail": "Provide either box_quantity or pallet_quantity."},
+            #                     status=status.HTTP_400_BAD_REQUEST)
             
 
         # Calculate tile area
@@ -1952,6 +1952,7 @@ class InvoicePaidView(APIView):
             invoices_data = request.data.get("invoices", [])  # List of invoice IDs and amounts
             payment_amount = Decimal(request.data.get("payment_amount"))
             payment_amount = round(payment_amount, 2)
+            invoice_payment_date = request.data.get('payment_date')
             # payment_details = request.data.get("payment_details", {}) # JSON with method, transaction ID, etc.
             customer_id = request.data.get("customer_id")
             credit_account_id = request.data.get("credit_account_id")  # Bank/Cash account ID
@@ -2002,7 +2003,7 @@ class InvoicePaidView(APIView):
                     invoice.paid_amount += payment_for_invoice
                     invoice.unpaid_amount -= payment_for_invoice
                     invoice.payment_status = "paid" if invoice.unpaid_amount == Decimal(0) else "partially_paid"
-
+                    invoice.payment_date = invoice_payment_date 
                     # Add to total allocated
                     total_allocated += payment_for_invoice
                     if total_allocated > payment_amount:
@@ -3173,6 +3174,7 @@ class BillPaidView(APIView):
             payment_amount = Decimal(request.data.get("payment_amount"))
             payment_amount = round(payment_amount,2)
             vendor_id = request.data.get("vendor_id")
+            bill_payment_date = request.data.get("payment_date")
             debit_account_id = request.data.get("debit_account_id")  # Bank/Cash account ID
             use_advanced_payment = request.data.get("use_advanced_payment", False)
 
@@ -3215,6 +3217,7 @@ class BillPaidView(APIView):
                     bill.paid_amount += payment_for_bill
                     bill.unpaid_amount -= payment_for_bill
                     bill.payment_status = "paid" if bill.unpaid_amount == 0 else "partially_paid"
+                    bill.payment_date = bill_payment_date
 
                     # Add to total allocated
                     total_allocated += payment_for_bill
