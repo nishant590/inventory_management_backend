@@ -1552,7 +1552,7 @@ class ListInvoicesView(APIView):
             return Response({"detail": "Invalid or expired token."}, status=status.HTTP_401_UNAUTHORIZED)
 
         invoices = Invoice.objects.filter(is_active=True).values(
-            "id", "customer__business_name", "customer__customer_id",  "customer_email", "customer__mobile_number", "total_amount", "unpaid_amount", "bill_date", "due_date", "payment_status"
+            "id", "customer__business_name", "customer__customer_id",  "customer_email", "customer__mobile_number", "total_amount", "unpaid_amount", "bill_date", "due_date", "payment_date", "payment_status"
         ).order_by("-bill_date")
         invoice_list = list(invoices)  # Convert queryset to list of dicts
         return Response(invoice_list, status=status.HTTP_200_OK)
@@ -1579,7 +1579,7 @@ class ListCustomerInvoicesView(APIView):
             is_active=True).values(
             "id", "customer__business_name", "customer__customer_id",  
             "customer_email", "customer__mobile_number", 
-            "total_amount", "unpaid_amount", "bill_date", "paid_amount", 
+            "total_amount", "unpaid_amount", "bill_date", "paid_amount", "payment_date", 
             "due_date", "payment_status"
         )
         invoice_list = list(invoices)  # Convert queryset to list of dicts
@@ -1627,6 +1627,7 @@ class RetrieveInvoiceView(APIView):
                 "terms": invoice.terms,
                 "bill_date": invoice.bill_date,
                 "due_date": invoice.due_date,
+                "payment_date": invoice.payment_date,
                 "message_on_invoice": invoice.message_on_invoice,
                 "message_on_statement": invoice.message_on_statement,
                 "sum_amount": invoice.sum_amount,
@@ -1721,6 +1722,7 @@ class UpdateInvoiceView(APIView):
                 invoice.terms = data.get("terms", invoice.terms)
                 invoice.bill_date = data.get("bill_date", invoice.bill_date)
                 invoice.due_date = data.get("due_date", invoice.due_date)
+                invoice.payment_date = data.get("payment_date", invoice.payment_date)
                 invoice.sum_amount = Decimal(data.get("sum_amount", invoice.sum_amount))
                 invoice.is_taxed = is_taxed
                 invoice.tax_percentage = Decimal(data.get("tax_percentage", invoice.tax_percentage))
@@ -3030,7 +3032,7 @@ class ListBillsView(APIView):
             return Response({"detail": "Invalid or expired token."}, status=status.HTTP_401_UNAUTHORIZED)
 
         bills = Bill.objects.filter(is_active=True).values("id",
-            "bill_number", "vendor__business_name", "vendor__vendor_id", "vendor__email", "total_amount", "unpaid_amount", "bill_date", "due_date", "payment_status"
+            "bill_number", "vendor__business_name", "vendor__vendor_id", "vendor__email", "total_amount", "unpaid_amount", "bill_date", "due_date", "payment_date", "payment_status"
         )
         bill_list = list(bills)  # Convert queryset to list of dicts
         return Response(bill_list, status=status.HTTP_200_OK)
@@ -3057,7 +3059,7 @@ class ListVendorBillsView(APIView):
             "bill_number", "vendor__business_name", 
             "vendor__vendor_id", "vendor__email", 
             "total_amount", "unpaid_amount", "paid_amount",
-            "bill_date", "due_date", "payment_status"
+            "bill_date", "due_date", "payment_date", "payment_status"
         ).order_by('-bill_date')
         bill_list = list(bills)  # Convert queryset to list of dicts
         return Response(bill_list, status=status.HTTP_200_OK)
@@ -3094,6 +3096,7 @@ class RetrieveBillView(APIView):
                 "mailing_address_country": bill.mailing_address_country,
                 "bill_date": bill.bill_date,
                 "due_date": bill.due_date,
+                "payment_date": bill.payment_date,
                 "total_amount": bill.total_amount,
                 "payment_status": bill.payment_status,
                 "attachments": bill.attachments,
