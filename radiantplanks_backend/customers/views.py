@@ -863,7 +863,7 @@ class GetContractorTransactions(APIView):
                     'payment_id': payment.id,
                     'vendor_name': payment.vendor.business_name,
                     'payment_method': payment.payment_method,
-                    'payment_method_name': payment.get_payment_method_display(),
+                    # 'payment_method_name': payment.get_payment_method_display(),
                     'transaction_reference_id': payment.transaction_reference_id,
                     'bank_name': payment.bank_name,
                     'cheque_number': payment.cheque_number,
