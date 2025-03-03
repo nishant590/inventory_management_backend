@@ -139,8 +139,7 @@ class CreateExpenseView(APIView):
                     transaction=transaction,
                     payment_method=request.data.get("payment_method", ""),
                     transaction_reference_id=request.data.get("transaction_id", ""),
-                    bank_name=request.data.get("bank_name", ""),
-                    cheque_number=request.data.get("cheque_number", ""),
+                    bank_name="Frost Bank",
                     payment_date=payment_date,
                     payment_amount=total_amount,
                 )

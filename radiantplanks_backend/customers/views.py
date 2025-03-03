@@ -52,7 +52,7 @@ class CustomerCreateView(APIView):
             for i, addr in enumerate(addresses_data):
                 if 'address_type' not in addr or addr['address_type'] not in ['Billing', 'Shipping', 'Billing and Shipping']:
                     errors[f'addresses[{i}]'] = "Address type must be 'billing' or 'shipping' or 'Billing and Shipping'."
-                if ('street_add_1' not in addr) or ('street_add_2' not in addr):
+                if 'street_add_1' not in addr :
                     errors[f'addresses[{i}][street]'] = "Street is required."
 
         if errors:
@@ -66,13 +66,15 @@ class CustomerCreateView(APIView):
                     middle_name=data.get('middle_name', ''),
                     last_name=data['last_name'],
                     business_name=data.get('business_name', f"{data['first_name']} {data['last_name']}"),
-                    company=data.get('company', ''),
+                    company=data.get('company', None),
                     email=data['email'],
                     tax_exempt=tax_exempt,
-                    cc_email=data.get('cc_email', ''),
-                    bcc_email=data.get('bcc_email', ''),
-                    phone=data.get("phone",""),
+                    cc_email=data.get('cc_email', None),
+                    bcc_email=data.get('bcc_email', None),
+                    phone=data.get("phone",None),
                     mobile_number=data.get("mobile_number"),
+                    sales_tax_number=data.get("sales_tax_number",None),
+                    ein_number=data.get("ein_number",None),
                     created_by=request.user,
                     created_date=timezone.now(),
                     updated_by=request.user,
@@ -86,11 +88,11 @@ class CustomerCreateView(APIView):
                         customer=customer,
                         address_type=addr_data['address_type'],
                         street_add_1=addr_data.get('street_add_1'),
-                        street_add_2=addr_data.get('street_add_2'),
-                        city=addr_data.get('city', ''),
-                        state=addr_data.get('state', ''),
-                        postal_code=addr_data.get('postal_code', ''),
-                        country=addr_data.get('country', 'Unknown')
+                        street_add_2=addr_data.get('street_add_2', None),
+                        city=addr_data.get('city', None),
+                        state=addr_data.get('state', None),
+                        postal_code=addr_data.get('postal_code', None),
+                        country=addr_data.get('country', None)
                     )
             audit_log_entry = audit_log(user=request.user,
                               action="Customer created", 
@@ -188,16 +190,18 @@ class BulkCustomerCreateView(APIView):
                 for row in valid_rows.itertuples():
                     customer = Customer(
                         first_name=row.first_name,
-                        middle_name=row.middle_name if 'middle_name' in valid_rows.columns else '',
+                        middle_name=row.middle_name if 'middle_name' in valid_rows.columns else None,
                         last_name=row.last_name,
                         business_name=row.business_name if 'business_name' in valid_rows.columns else f"{row.first_name} {row.last_name}",
-                        company=row.company if 'company' in valid_rows.columns else '',
+                        company=row.company if 'company' in valid_rows.columns else None,
                         email=row.email,
-                        cc_email=row.cc_email if 'cc_email' in valid_rows.columns else '',
-                        bcc_email=row.bcc_email if 'bcc_email' in valid_rows.columns else '',
+                        cc_email=row.cc_email if 'cc_email' in valid_rows.columns else None,
+                        bcc_email=row.bcc_email if 'bcc_email' in valid_rows.columns else None,
                         phone=row.phone,
                         tax_exempt=row.tax_exempt,
-                        mobile_number=row.mobile_number if 'mobile_number' in valid_rows.columns else '',
+                        mobile_number=row.mobile_number if 'mobile_number' in valid_rows.columns else None,
+                        sales_tax_number=row.sales_tax_number if 'sales_tax_number' in valid_rows.columns else None,
+                        ein_number=row.ein_number if 'ein_number' in valid_rows.columns else None,
                         created_by=request.user,
                         created_date=timezone.now(),
                         updated_by=request.user,
@@ -213,11 +217,11 @@ class BulkCustomerCreateView(APIView):
                         customer=customer,
                         address_type=row.address_type,
                         street_add_1=row.street_add_1,
-                        street_add_2=row.street_add_2,
-                        city=row.city,
-                        state=row.state,
-                        postal_code=row.postal_code,
-                        country=row.country
+                        street_add_2=row.street_add_2 if 'street_add_2' in valid_rows.columns else None,
+                        city=row.city if 'city' in valid_rows.columns else None,
+                        state=row.state if 'state' in valid_rows.columns else None,
+                        postal_code=row.postal_code if 'postal_code' in valid_rows.columns else None,
+                        country=row.country if 'country' in valid_rows.columns else None,
                     )
                     addresses_to_create.append(address)
 
@@ -258,6 +262,8 @@ class CustomerListView(APIView):
                 "phone": customer.phone,
                 "tax_exempt": customer.tax_exempt,
                 "mobile_number": customer.mobile_number,
+                "sales_tax_number": customer.sales_tax_number,
+                "ein_number": customer.ein_number,
                 "is_active": customer.is_active,
                 "addresses": list(customer.addresses.values()),
                 "created_date": customer.created_date,
@@ -306,6 +312,8 @@ class CustomerDetailView(APIView):
                 "bcc_email": customer.bcc_email,
                 "phone": customer.phone,
                 "mobile_number": customer.mobile_number,
+                "sales_tax_number": customer.sales_tax_number,
+                "ein_number": customer.ein_number,
                 "addresses": list(customer_add)
             }
             return Response({"customer": customer_details}, status=status.HTTP_200_OK)
@@ -339,6 +347,8 @@ class CustomerEditView(APIView):
         customer.email = data.get("email", customer.email)
         customer.cc_email = data.get("cc_email", customer.cc_email)
         customer.bcc_email = data.get("bcc_email", customer.bcc_email)
+        customer.sales_tax_number = data.get("sales_tax_number", customer.sales_tax_number)
+        customer.ein_number = data.get("ein_number", customer.ein_number)
         customer.phone = data.get("phone", customer.phone)
         customer.tax_exempt = tax_exempt
         customer.mobile_number = data.get("mobile_number", customer.phone)
@@ -354,11 +364,11 @@ class CustomerEditView(APIView):
                     customer=customer,
                     address_type=addr_data['address_type'],
                     street_add_1=addr_data['street_add_1'],
-                    street_add_2=addr_data['street_add_2'],
-                    city=addr_data.get('city', ''),
-                    state=addr_data.get('state', ''),
-                    postal_code=addr_data.get('postal_code', ''),
-                    country=addr_data.get('country', 'Unknown')
+                    street_add_2=addr_data.get('street_add_2', None),
+                    city=addr_data.get('city', None),
+                    state=addr_data.get('state', None),
+                    postal_code=addr_data.get('postal_code', None),
+                    country=addr_data.get('country', None)
                 )
         audit_log_entry = audit_log(user=request.user,
                               action="Customer Edited", 
@@ -421,7 +431,7 @@ class VendorCreateView(APIView):
             for i, addr in enumerate(addresses_data):
                 if 'address_type' not in addr or addr['address_type'] not in ['Billing', 'Shipping', 'Billing and Shipping']:
                     errors[f'addresses[{i}]'] = "Address type must be 'Billing' or 'Shipping' or 'Billing and Shipping'."
-                if 'street_add_1' not in addr or 'street_add_2' not in addr:
+                if 'street_add_1' not in addr:
                     errors[f'addresses[{i}][street]'] = "Street is required."
 
         if errors:
@@ -444,6 +454,8 @@ class VendorCreateView(APIView):
                     phone=data['phone'],
                     mobile_number=data['mobile_number'],
                     is_contractor=data.get('is_contractor', False),
+                    sales_tax_number=data.get('sales_tax_number', None),
+                    ein_number=data.get('ein_number', None),
                     created_by=request.user,
                     created_date=timezone.now(),
                     updated_by=request.user,
@@ -457,11 +469,11 @@ class VendorCreateView(APIView):
                         vendor=vendor,
                         address_type=addr_data['address_type'],
                         street_add_1=addr_data['street_add_1'],
-                        street_add_2=addr_data['street_add_2'],
-                        city=addr_data.get('city', ''),
-                        state=addr_data.get('state', ''),
-                        postal_code=addr_data.get('postal_code', ''),
-                        country=addr_data.get('country', 'Unknown')
+                        street_add_2=addr_data('street_add_2', None),
+                        city=addr_data.get('city', None),
+                        state=addr_data.get('state', None),
+                        postal_code=addr_data.get('postal_code', None),
+                        country=addr_data.get('country', None)
                     )
             audit_log_entry = audit_log(user=request.user,
                               action="Vendor Created", 
@@ -496,6 +508,8 @@ class VendorListView(APIView):
                 "bcc_email": vendor.bcc_email,
                 "phone": vendor.phone,
                 "mobile_number": vendor.mobile_number,
+                "sales_tax_number": vendor.sales_tax_number,
+                "ein_number": vendor.ein_number,
                 "is_active": vendor.is_active,
                 "addresses": list(vendor.vendor_addresses.values()),
                 "created_date": vendor.created_date,
@@ -535,7 +549,9 @@ class VendorEditView(APIView):
         vendor.cc_email = data.get("cc_email", vendor.cc_email)
         vendor.bcc_email = data.get("bcc_email", vendor.bcc_email)
         vendor.phone = data.get("phone", vendor.phone)
-        vendor.mobile_number = data.get("mobile_number", vendor.phone)
+        vendor.mobile_number = data.get("mobile_number", vendor.mobile_number)
+        vendor.sales_tax_number = data.get("sales_tax_number", vendor.sales_tax_number)
+        vendor.ein_number = data.get("ein_number", vendor.ein_number)
         vendor.is_contractor = data.get("is_contractor", vendor.is_contractor)
         vendor.updated_by = request.user
         vendor.updated_date = timezone.now()
@@ -549,11 +565,11 @@ class VendorEditView(APIView):
                     vendor=vendor,
                     address_type=addr_data['address_type'],
                     street_add_1=addr_data['street_add_1'],
-                    street_add_2=addr_data['street_add_2'],
-                    city=addr_data.get('city', ''),
-                    state=addr_data.get('state', ''),
-                    postal_code=addr_data.get('postal_code', ''),
-                    country=addr_data.get('country', 'Unknown')
+                    street_add_2=addr_data('street_add_2', None),
+                    city=addr_data.get('city', None),
+                    state=addr_data.get('state', None),
+                    postal_code=addr_data.get('postal_code', None),
+                    country=addr_data.get('country', None)
                 )
         audit_log_entry = audit_log(user=request.user,
                               action="Vendor Edited", 
@@ -623,6 +639,8 @@ class VendorRetriveView(APIView):
                 "bcc_email": vendor.bcc_email,
                 "phone": vendor.phone,
                 "mobile_number": vendor.mobile_number,
+                "sales_tax_number": vendor.sales_tax_number,
+                "ein_number": vendor.ein_number,
                 "is_contractor": vendor.is_contractor,
                 "addresses": list(vendor_add)
             }
@@ -723,6 +741,8 @@ class BulkVendorCreateView(APIView):
                         bcc_email=row.bcc_email if 'bcc_email' in valid_rows.columns else '',
                         phone=row.phone,
                         mobile_number=row.mobile_number if 'mobile_number' in valid_rows.columns else '',
+                        sales_tax_number=row.sales_tax_number if 'sales_tax_number' in valid_rows.columns else '',
+                        ein_number=row.ein_number if 'ein_number' in valid_rows.columns else '',
                         created_by=request.user,
                         created_date=timezone.now(),
                         updated_by=request.user,
@@ -738,11 +758,11 @@ class BulkVendorCreateView(APIView):
                         vendor=vendor,
                         address_type=row.address_type,
                         street_add_1=row.street_add_1,
-                        street_add_2=row.street_add_2,
-                        city=row.city,
-                        state=row.state,
-                        postal_code=row.postal_code,
-                        country=row.country
+                        street_add_2=row.street_add_2 if 'street_add_2' in valid_rows.columns else None,
+                        city=row.city if 'city' in valid_rows.columns else None,
+                        state=row.state if 'state' in valid_rows.columns else None,
+                        postal_code=row.postal_code if 'postal_code' in valid_rows.columns else None,
+                        country=row.country if 'country' in valid_rows.columns else None
                     )
                     addresses_to_create.append(address)
 

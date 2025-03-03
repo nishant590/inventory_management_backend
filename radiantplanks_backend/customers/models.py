@@ -16,6 +16,8 @@ class Customer(models.Model):
     phone = models.CharField(max_length=15, null=True)
     mobile_number = models.CharField(max_length=15, null=True)
     tax_exempt = models.BooleanField(default=False)
+    sales_tax_number = models.CharField(max_length=100, blank=True, null=True)
+    ein_number = models.CharField(max_length=100, blank=True, null=True)
     # payments = models.CharField(max_length=20, choices=[('cash', 'Cash'), ('check', 'Check'),('credit card','Credit Card')], default="cash")
     # taxes = models.CharField(max_length=150)
     created_by = models.ForeignKey(NewUser, on_delete=models.SET_NULL, related_name='customer_created_by', null=True)
@@ -56,6 +58,8 @@ class Vendor(models.Model):
     bcc_email = models.EmailField(null=True, blank=True)
     phone = models.CharField(max_length=15)
     mobile_number = models.CharField(max_length=15)
+    sales_tax_number = models.CharField(max_length=100, blank=True, null=True)
+    ein_number = models.CharField(max_length=100, blank=True, null=True)
     created_by = models.ForeignKey(NewUser, on_delete=models.SET_NULL, related_name='vendor_created_by', null=True)
     created_date = models.DateTimeField(auto_now_add=True)
     updated_by = models.ForeignKey(NewUser, on_delete=models.SET_NULL, related_name='vendor_updated_by', null=True)
@@ -72,11 +76,11 @@ class VendorAddress(models.Model):
     address_type = models.CharField(max_length=30, choices=[('Billing', 'Billing'), ('Shipping', 'Shipping'), 
                                                             ('Billing and Shipping', 'Billing and Shipping')])
     street_add_1 = models.CharField(max_length=255)
-    street_add_2 = models.CharField(max_length=255)
-    city = models.CharField(max_length=100)
-    state = models.CharField(max_length=100)
+    street_add_2 = models.CharField(max_length=255, null=True, blank=True)
+    city = models.CharField(max_length=100, null=True, blank=True)
+    state = models.CharField(max_length=100, null=True, blank=True)
     postal_code = models.CharField(max_length=20)
-    country = models.CharField(max_length=100)
+    country = models.CharField(max_length=100, null=True, blank=True)
 
     def __str__(self):
         return f"{self.address_type.capitalize()} Address for {self.vendor.business_name}"
