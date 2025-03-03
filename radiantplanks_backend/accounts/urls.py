@@ -13,7 +13,8 @@ from .views import (AddAccountAPI,
                     OwnerContributionAPI,
                     GetAllOwnerTransactionsAPI,
                     OwnerTakeOutMoneyAPI,
-                    EditOwnerTransactionAPI
+                    EditOwnerTransactionAPI,
+                    DeleteOwnerTransactionAPI,
                     )
 
 urlpatterns = [
@@ -33,4 +34,5 @@ urlpatterns = [
     path('owner-transactions/', GetAllOwnerTransactionsAPI.as_view(), name='owner-transactions'),
     path('owner-takeout-money/', OwnerTakeOutMoneyAPI.as_view(), name='owner-takeout-money'),
     path('owner-contribution-edit/<int:id>/', EditOwnerTransactionAPI.as_view(), name='owner-contribution-edit'),
+    path('owner-contribution-delete/<int:id>/', DeleteOwnerTransactionAPI.as_view(), name='owner-contribution-delete'),
 ]

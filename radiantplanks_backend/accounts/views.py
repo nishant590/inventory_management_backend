@@ -1031,10 +1031,65 @@ class EditOwnerTransactionAPI(APIView):
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         
 
+class DeleteOwnerTransactionAPI(APIView):
+    def delete(self, request, id):
+        try:
+            owner_entry = get_object_or_404(OwnerPaymentDetails, id=id)
+            transaction_entry = get_object_or_404(Transaction, id=owner_entry.transaction.id)
+            transaction_lines = TransactionLine.objects.filter(transaction=transaction_entry, is_active=True)
+
+            owner_equity_account = get_object_or_404(Account, code='OWN-001', is_active=True)
+            source_account = None
+
+            for line in transaction_lines:
+                if line.account.code != 'OWN-001':
+                    source_account = line.account
+                    break
+
+            with transaction.atomic():
+                # Reverse balances before deletion
+                for line in transaction_lines:
+                    if line.account == source_account:
+                        if owner_entry.transaction_type == "money_added":
+                            source_account.balance -= line.debit_amount
+                        if owner_entry.transaction_type == "money_removed":
+                            source_account.balance += line.credit_amount
+                    elif line.account == owner_equity_account:
+                        if owner_entry.transaction_type == "money_added":
+                            owner_equity_account.balance -= line.credit_amount
+                        if owner_entry.transaction_type == "money_removed":
+                            owner_equity_account.balance += line.debit_amount
+                
+                source_account.save()
+                owner_equity_account.save()
+
+                # Set transaction lines to inactive
+                transaction_lines.update(is_active=False)
+
+                # Delete owner entry and transaction
+                owner_entry.delete()
+                transaction_entry.delete()
+
+            audit_log_entry = audit_log(
+                user=request.user,
+                action="Transaction deleted",
+                ip_add=request.META.get('HTTP_X_FORWARDED_FOR'),
+                model_name="Transaction",
+                record_id=id
+            )
+            log.app.info(f"Transaction deleted successfully: {id}")
+            return Response({"message": "Transaction deleted successfully."}, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            log.trace.trace(f"Error deleting transaction {traceback.format_exc()}")
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
 class CustomPagination(PageNumberPagination):
     page_size = 10  # Default page size
     page_size_query_param = 'page_size'  # Allow client to override the page size
     max_page_size = 100  # Maximum page size
+
 
 class TransactionListView(APIView):
     def get(self, request):
