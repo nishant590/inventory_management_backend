@@ -4,8 +4,12 @@ from rest_framework import status
 from .models import Account, ReceivableTracking, Transaction, TransactionLine, PayableTracking, OwnerPaymentDetails
 from django.core.exceptions import ValidationError
 from django.db.models import Sum, Q
+import io
 from django.http import JsonResponse
 from rest_framework.pagination import PageNumberPagination
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment, Border, Side
+from django.http import JsonResponse, HttpResponse
 from django.core.paginator import Paginator, EmptyPage
 from customers.models import Customer, Vendor
 from rest_framework.permissions import IsAuthenticated
@@ -452,6 +456,127 @@ class BalanceSheetView(APIView):
         })
 
 
+class ProfitLossXLSXView(APIView):
+    """
+    API view to generate Profit and Loss Statement
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """
+        Generate Profit and Loss Statement as an Excel file
+        """
+        try:
+            # Optional date range filtering
+            start_date = request.GET.get('start_date')
+            end_date = request.GET.get('end_date')
+
+            # Income Accounts
+            income_types = ['sales_income', 'service_income', 'other_income']
+            income = []
+            total_income = Decimal('0.00')
+
+            for income_type in income_types:
+                accounts = Account.objects.filter(account_type=income_type, is_active=True)
+                for account in accounts:
+                    income_query = TransactionLine.objects.filter(
+                        account=account,
+                        transaction__transaction_type='income',
+                        is_active=True
+                    )
+
+                    if start_date:
+                        income_query = income_query.filter(transaction__date__gte=start_date)
+                    if end_date:
+                        income_query = income_query.filter(transaction__date__lte=end_date)
+
+                    income_amount = income_query.aggregate(total=Sum('credit_amount'))['total'] or Decimal('0.00')
+
+                    income.append([f"{account.name} ({account.code})", float(income_amount)])
+                    total_income += income_amount
+
+            # Expense Accounts
+            expense_types = [
+                'cost_of_goods_sold', 'operating_expenses', 'payroll_expenses',
+                'marketing_expenses', 'administrative_expenses', 'other_expenses'
+            ]
+            expenses = []
+            total_expenses = Decimal('0.00')
+
+            for expense_type in expense_types:
+                accounts = Account.objects.filter(account_type=expense_type, is_active=True)
+                for account in accounts:
+                    expense_query = TransactionLine.objects.filter(
+                        account=account,
+                        is_active=True
+                    )
+
+                    if start_date:
+                        expense_query = expense_query.filter(transaction__date__gte=start_date)
+                    if end_date:
+                        expense_query = expense_query.filter(transaction__date__lte=end_date)
+
+                    expense_amount = expense_query.aggregate(total=Sum('debit_amount'))['total'] or Decimal('0.00')
+
+                    expenses.append([f"{account.name} ({account.code})", float(expense_amount)])
+                    total_expenses += expense_amount
+
+            # Calculate Net Profit
+            net_profit = total_income - total_expenses
+
+            # Generate XLSX
+            return self.generate_profit_loss_xlsx(income, expenses, total_income, total_expenses, net_profit)
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def generate_profit_loss_xlsx(self, income, expenses, total_income, total_expenses, net_profit):
+        """
+        Generate an Excel file for Profit and Loss Statement
+        """
+        try:
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Profit and Loss Statement"
+
+            ws.append(["Profit and Loss Statement"])  # Title
+            ws.append([])
+
+            # Income Section
+            ws.append(["Income Accounts"])
+            for row in income:
+                ws.append(row)
+            ws.append(["Total Income", float(total_income)])
+            ws.append([])
+
+            # Expense Section
+            ws.append(["Expense Accounts"])
+            for row in expenses:
+                ws.append(row)
+            ws.append(["Total Expenses", float(total_expenses)])
+            ws.append([])
+
+            # Net Profit
+            ws.append(["Net Profit", float(net_profit)])
+
+            # Save to memory
+            output = io.BytesIO()
+            wb.save(output)
+            output.seek(0)
+
+            # Create response
+            response = HttpResponse(
+                output.getvalue(),
+                content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+            response["Content-Disposition"] = 'attachment; filename="Profit_Loss_Statement.xlsx"'
+            return response
+
+        except Exception as e:
+            return Response({"error": "Failed to generate XLSX file", "details": str(e)},
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 class ProfitLossStatementView(APIView):
     """
     API view to generate Profit and Loss Statement without serializers
@@ -518,7 +643,6 @@ class ProfitLossStatementView(APIView):
                 # Apply date filtering if dates are provided
                 expense_query = TransactionLine.objects.filter(
                     account=account, 
-                    transaction__transaction_type='expense',
                     is_active=True
                 )
                 
@@ -653,6 +777,77 @@ class ProfitLossStatementCustomerView(APIView):
             'net_profit': float(net_profit)
         })
 
+
+class ProfitLossXLSXView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+
+        try:
+            if start_date:
+                start_date = datetime.strptime(start_date, "%Y-%m-%d")
+            if end_date:
+                end_date = datetime.strptime(end_date, "%Y-%m-%d")
+        except ValueError:
+            return JsonResponse({'error': 'Invalid date format. Use YYYY-MM-DD.'}, status=400)
+
+        def calculate_balance(account, transaction_type, field):
+            filters = {
+                'account': account,
+                'transaction__transaction_type': transaction_type,
+                'is_active': True,
+                'transaction__is_active': True
+            }
+            if start_date and end_date:
+                filters.update({'transaction__date__gte': start_date, 'transaction__date__lte': end_date})
+            
+            transaction_lines = TransactionLine.objects.filter(**filters)
+            return transaction_lines.aggregate(Sum(field))[f'{field}__sum'] or Decimal('0.00')
+
+        account_categories = {
+            'Income': ['sales_income', 'service_income', 'other_income'],
+            'Expenses': ['cost_of_goods_sold', 'operating_expenses', 'payroll_expenses', 'marketing_expenses', 'administrative_expenses', 'other_expenses']
+        }
+
+        data = []
+        total_income, total_expenses = Decimal('0.00'), Decimal('0.00')
+
+        for category, types in account_categories.items():
+            for acc_type in types:
+                accounts = Account.objects.filter(account_type=acc_type, is_active=True)
+                for account in accounts:
+                    balance = calculate_balance(account, 'income' if category == 'Income' else 'expense', 'credit_amount' if category == 'Income' else 'debit_amount')
+                    data.append({
+                        'Category': category,
+                        'Account Name': account.name,
+                        'Account Code': account.code,
+                        'Balance': float(balance)
+                    })
+                    if category == 'Income':
+                        total_income += balance
+                    else:
+                        total_expenses += balance
+
+        gross_profit = total_income - total_expenses
+        data.append({
+            'Category': 'Summary',
+            'Account Name': 'Gross Profit',
+            'Account Code': '-',
+            'Balance': float(gross_profit)
+        })
+        
+        df = pd.DataFrame(data)
+        
+        response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = 'attachment; filename=profit_loss_statement.xlsx'
+        
+        with pd.ExcelWriter(response, engine='openpyxl') as writer:
+            df.to_excel(writer, sheet_name='Profit & Loss Statement', index=False)
+            writer.close()
+        
+        return response
 
 
 class AccountsReceivableAPIView(APIView):

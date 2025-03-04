@@ -15,6 +15,7 @@ from .views import (AddAccountAPI,
                     OwnerTakeOutMoneyAPI,
                     EditOwnerTransactionAPI,
                     DeleteOwnerTransactionAPI,
+                    ProfitLossXLSXView,
                     )
 
 urlpatterns = [
@@ -27,9 +28,12 @@ urlpatterns = [
     path('accounts-recievable/', AccountReceivablesView.as_view(), name='account-receivables'),
     path('accounts-recievable/<int:customer_id>/', AccountReceivablesSingleView.as_view(), name='account-receivables'),
     path('accounts-recievable-datewise/', AccountsReceivableAPIView.as_view(), name='account-receivables-datewise'),
+    
     path('balancesheet/', BalanceSheetView.as_view(), name='balancesheet'),
     path('profitandloss/', ProfitLossStatementView.as_view(), name='profitandloss'),
     path('profitandloss-customer/', ProfitLossStatementCustomerView.as_view(), name='profitandloss-customer'),
+    path('profitandloss-xlsx/', ProfitLossXLSXView.as_view(), name='profitandloss-xlsx'),
+    
     path('owner-contribution/', OwnerContributionAPI.as_view(), name='owner-contribution'),
     path('owner-transactions/', GetAllOwnerTransactionsAPI.as_view(), name='owner-transactions'),
     path('owner-takeout-money/', OwnerTakeOutMoneyAPI.as_view(), name='owner-takeout-money'),
