@@ -279,11 +279,6 @@ def update_invoice_transaction(customer, invoice_id, new_products, new_service_p
         all_transaction_lines = TransactionLine.objects.filter(transaction=mapping.transaction.id, is_active=True).all()
         original_receivable_amount = TransactionLine.objects.filter(transaction=mapping.transaction.id, account__code='AR-001', is_active=True).first().debit_amount
         # Fetch relevant accounts
-        inventory_account = Account.objects.get(code='INV-001')
-        receivable_account = Account.objects.get(code='AR-001')
-        cogs_account = Account.objects.get(code='COGS-001')
-        sales_revenue_account = Account.objects.get(code='INC-001')
-        tax_account = Account.objects.get(code='AP-002')
 
         with db_transaction.atomic():
             # Calculate original amounts from transaction lines
@@ -333,6 +328,12 @@ def update_invoice_transaction(customer, invoice_id, new_products, new_service_p
                 account.save()
                 line.is_active = False
                 line.save()
+
+            inventory_account = Account.objects.get(code='INV-001')
+            receivable_account = Account.objects.get(code='AR-001')
+            cogs_account = Account.objects.get(code='COGS-001')
+            sales_revenue_account = Account.objects.get(code='INC-001')
+            tax_account = Account.objects.get(code='AP-002')
 
             # Update ReceivableTracking
             receivable, _ = ReceivableTracking.objects.get_or_create(customer=customer)
@@ -2016,11 +2017,11 @@ class InvoicePaidView(APIView):
                     invoice.save()
                     # Record invoice transaction
                     transactions_to_log.append({
+                        "invoice_id": invoice.id,
                         "description": f"Payment for invoice {invoice.id}",
                         "debit_amount": payment_for_invoice,
                         "credit_amount": 0,
                     })
-
 
                 # Update receivable tracking
                 receivable.receivable_amount -= Decimal(total_allocated)
@@ -2072,11 +2073,12 @@ class InvoicePaidView(APIView):
                     payment_amount=payment_amount,
                 )
                 credit_account.balance += Decimal(payment_amount)
-                InvoiceTransactionMapping.objects.create(
-                    transaction=transaction,
-                    invoice_id=invoice_id,
-                    is_active=True
-                )
+                for line in transactions_to_log:
+                    InvoiceTransactionMapping.objects.create(
+                        transaction=transaction,
+                        invoice_id=line.get("invoice_id"),
+                        is_active=True
+                    )
 
                 receivable.save()
 
@@ -3234,6 +3236,7 @@ class BillPaidView(APIView):
 
                     # Record bill transaction
                     transactions_to_log.append({
+                        "bill_id": bill.id,
                         "description": f"Payment for bill {bill.id}",
                         "credit_amount": payment_for_bill,
                         "debit_amount": 0,
@@ -3292,11 +3295,12 @@ class BillPaidView(APIView):
                 debit_account.balance -= Decimal(payment_amount)
                 payable.save()
 
-                BillTransactionMapping.objects.create(
-                    transaction=transaction,
-                    bill_id=bill_id,
-                    is_active=True
-                )
+                for line in transactions_to_log:
+                    BillTransactionMapping.objects.create(
+                        transaction=transaction,
+                        bill_id=line.get("bill_id"),
+                        is_active=True
+                    )
 
                 debit_account.save()
                 accounts_payable.save()

@@ -73,24 +73,36 @@ class Account(models.Model):
             {'name': 'Inventory', 'account_type': 'inventory', 'code': 'INV-001'},
             {'name': 'Owner Equity', 'account_type': 'owner_equity', 'code': 'OWN-001'},
 
-            
             # Liability Accounts
             {'name': 'Accounts Payable', 'account_type': 'accounts_payable', 'code': 'AP-001'},
             {'name': 'Tax Payable', 'account_type': 'tax_payable', 'code': 'AP-002'},
-            
+
             # Income Accounts
             {'name': 'Sales Revenue', 'account_type': 'sales_income', 'code': 'INC-001'},
-            
+
             # Expense Accounts
             {'name': 'Cost of Goods Sold', 'account_type': 'cost_of_goods_sold', 'code': 'COGS-001'},
+            {'name': 'Rent', 'account_type': 'operating_expenses', 'code': 'RE-001'},
+            {'name': 'Utility', 'account_type': 'operating_expenses', 'code': 'UT-001'},
+            {'name': 'Phone & Internet', 'account_type': 'operating_expenses', 'code': 'PH-001'},
+            {'name': 'Advertising Material & Marketing', 'account_type': 'marketing_expenses', 'code': 'ADM-001'},
+            {'name': 'Ocean Freight', 'account_type': 'operating_expenses', 'code': 'OF-001'},
+            {'name': 'Annual Bond', 'account_type': 'other_expenses', 'code': 'AB-001'},
+            {'name': 'Customs Clearing', 'account_type': 'operating_expenses', 'code': 'CC-001'},
+            {'name': 'ISF Filing', 'account_type': 'administrative_expenses', 'code': 'ISF-001'},
+            {'name': 'Delivery Order', 'account_type': 'operating_expenses', 'code': 'DO-001'},
+            {'name': 'Drayage / Trucking', 'account_type': 'cost_of_goods_sold', 'code': 'DT-001'},
+            {'name': 'Labor', 'account_type': 'payroll_expenses', 'code': 'LB-001'},
+            {'name': 'Wire / Transfer Fee', 'account_type': 'administrative_expenses', 'code': 'WT-001'},
+            {'name': 'Other Misc', 'account_type': 'other_expenses', 'code': 'MIS-001'},
         ]
 
         for account_data in default_accounts:
             cls.objects.get_or_create(
-                code=account_data['code'], 
-                defaults=account_data
+                code=account_data['code'],
+                defaults={**account_data, 'balance': 0}
             )
-
+    
     
 class Transaction(models.Model):
     TRANSACTION_TYPES = [
