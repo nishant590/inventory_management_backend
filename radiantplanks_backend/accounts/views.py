@@ -18,10 +18,12 @@ import pandas as pd
 from radiantplanks_backend.logging import log
 import traceback
 from authentication.views import audit_log
-from datetime import datetime 
+from datetime import datetime, timedelta 
 from django.shortcuts import get_object_or_404
 from django.db import transaction
 from django.utils.timezone import now
+from dateutil.relativedelta import relativedelta
+
 
 
 
@@ -672,6 +674,215 @@ class ProfitLossStatementView(APIView):
             'net_profit': float(net_profit)
         })
     
+
+class ProfitLossComparisonView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        period_type = request.GET.get('period_type', 'monthly')  # Options: monthly, quarterly, yearly
+        start_date = request.GET.get('start_date')
+        end_date = request.GET.get('end_date')
+        
+        if not start_date or not end_date:
+            return JsonResponse({'error': 'start_date and end_date are required'}, status=400)
+        
+        start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
+        end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
+        
+        period_ranges = self.generate_periods(start_date, end_date, period_type)
+        
+        report = []
+        for period_start, period_end in period_ranges:
+            report.append(self.generate_detailed_pnl_statement(period_start, period_end))
+        
+        return JsonResponse({'report': report})
+    
+    def generate_periods(self, start_date, end_date, period_type):
+        periods = []
+        current_start = start_date
+        
+        while current_start <= end_date:
+            if period_type == 'monthly':
+                next_start = current_start + relativedelta(months=1)
+            elif period_type == 'quarterly':
+                next_start = current_start + relativedelta(months=3)
+            elif period_type == 'yearly':
+                next_start = current_start + relativedelta(years=1)
+            else:
+                raise ValueError("Invalid period type")
+            
+            period_end = min(next_start - timedelta(days=1), end_date)
+            periods.append((current_start, period_end))
+            current_start = next_start
+        
+        return periods
+    
+    def generate_detailed_pnl_statement(self, start_date, end_date):
+        income_types = ['sales_income', 'service_income', 'other_income']
+        expense_types = ['cost_of_goods_sold', 'operating_expenses', 'payroll_expenses', 'marketing_expenses', 'administrative_expenses', 'other_expenses']
+        
+        total_income = Decimal('0.00')
+        total_expenses = Decimal('0.00')
+        income_details = []
+        expense_details = []
+        
+        # Calculate Income
+        for income_type in income_types:
+            accounts = Account.objects.filter(account_type=income_type, is_active=True)
+            for account in accounts:
+                income_amount = TransactionLine.objects.filter(
+                    account=account,
+                    transaction__transaction_type='income',
+                    transaction__date__gte=start_date,
+                    transaction__date__lte=end_date,
+                    is_active=True
+                ).aggregate(total=Sum('credit_amount'))['total'] or Decimal('0.00')
+                total_income += income_amount
+                income_details.append({
+                    'name': account.name,
+                    'code': account.code,
+                    'amount': float(income_amount)
+                })
+        
+        # Calculate Expenses
+        for expense_type in expense_types:
+            accounts = Account.objects.filter(account_type=expense_type, is_active=True)
+            for account in accounts:
+                expense_amount = TransactionLine.objects.filter(
+                    account=account,
+                    transaction__date__gte=start_date,
+                    transaction__date__lte=end_date,
+                    is_active=True
+                ).aggregate(total=Sum('debit_amount'))['total'] or Decimal('0.00')
+                total_expenses += expense_amount
+                expense_details.append({
+                    'name': account.name,
+                    'code': account.code,
+                    'amount': float(expense_amount)
+                })
+        
+        return {
+            'start_date': str(start_date),
+            'end_date': str(end_date),
+            'income': income_details,
+            'expenses': expense_details,
+            'total_income': float(total_income),
+            'total_expenses': float(total_expenses),
+            'net_profit': float(total_income - total_expenses)
+        }
+
+
+class ProfitLossComparisonAccrualView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        period_type = request.GET.get('period_type', 'monthly')  # Options: monthly, quarterly, yearly
+        report_type = request.GET.get('report_type', 'accrual')  # Options: accrual, cash
+        start_date = request.GET.get('start_date')
+        end_date = request.GET.get('end_date')
+        
+        if not start_date or not end_date:
+            return JsonResponse({'error': 'start_date and end_date are required'}, status=400)
+        
+        start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
+        end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
+        
+        period_ranges = self.generate_periods(start_date, end_date, period_type)
+        
+        report = []
+        for period_start, period_end in period_ranges:
+            report.append(self.generate_detailed_pnl_statement(period_start, period_end, report_type))
+        
+        return JsonResponse({'report': report})
+    
+    def generate_periods(self, start_date, end_date, period_type):
+        periods = []
+        current_start = start_date
+        
+        while current_start <= end_date:
+            if period_type == 'monthly':
+                next_start = current_start + relativedelta(months=1)
+            elif period_type == 'quarterly':
+                next_start = current_start + relativedelta(months=3)
+            elif period_type == 'yearly':
+                next_start = current_start + relativedelta(years=1)
+            else:
+                raise ValueError("Invalid period type")
+            
+            period_end = min(next_start - timedelta(days=1), end_date)
+            periods.append((current_start, period_end))
+            current_start = next_start
+        
+        return periods
+    
+    def generate_detailed_pnl_statement(self, start_date, end_date, report_type):
+        income_types = ['sales_income', 'service_income', 'other_income']
+        expense_types = ['cost_of_goods_sold', 'operating_expenses', 'payroll_expenses', 'marketing_expenses', 'administrative_expenses', 'other_expenses']
+        
+        total_income = Decimal('0.00')
+        total_expenses = Decimal('0.00')
+        income_details = []
+        expense_details = []
+        
+        # Calculate Income
+        for income_type in income_types:
+            accounts = Account.objects.filter(account_type=income_type, is_active=True)
+            for account in accounts:
+                income_query = TransactionLine.objects.filter(
+                    account=account,
+                    transaction__transaction_type='income',
+                    transaction__date__gte=start_date,
+                    transaction__date__lte=end_date,
+                    is_active=True
+                )
+                
+                if report_type == 'cash':
+                    income_query = income_query.filter(transaction__invoice_transactions__is_payment_transaction=True)
+                else:
+                    income_query = income_query.filter(transaction__invoice_transactions__is_payment_transaction=False)
+                
+                income_amount = income_query.aggregate(total=Sum('credit_amount'))['total'] or Decimal('0.00')
+                total_income += income_amount
+                income_details.append({
+                    'name': account.name,
+                    'code': account.code,
+                    'amount': float(income_amount)
+                })
+        
+        # Calculate Expenses
+        for expense_type in expense_types:
+            accounts = Account.objects.filter(account_type=expense_type, is_active=True)
+            for account in accounts:
+                expense_query = TransactionLine.objects.filter(
+                    account=account,
+                    transaction__date__gte=start_date,
+                    transaction__date__lte=end_date,
+                    is_active=True
+                )
+                
+                if report_type == 'cash':
+                    expense_query = expense_query.filter(account__account_type__in=['cash', 'bank'])
+                
+                expense_amount = expense_query.aggregate(total=Sum('debit_amount'))['total'] or Decimal('0.00')
+                total_expenses += expense_amount
+                expense_details.append({
+                    'name': account.name,
+                    'code': account.code,
+                    'amount': float(expense_amount)
+                })
+        
+        return {
+            'start_date': str(start_date),
+            'end_date': str(end_date),
+            'report_type': report_type,
+            'income': income_details,
+            'expenses': expense_details,
+            'total_income': float(total_income),
+            'total_expenses': float(total_expenses),
+            'net_profit': float(total_income - total_expenses)
+        }
+
+
 
 class ProfitLossStatementCustomerView(APIView):
     """

@@ -247,7 +247,8 @@ class BillItems(models.Model):
 
 class InvoiceTransactionMapping(models.Model):
     invoice_id = models.CharField(max_length=255)  # Unique Invoice ID
-    transaction = models.ForeignKey(Transaction, on_delete=models.CASCADE)
+    transaction = models.ForeignKey(Transaction, on_delete=models.CASCADE, related_name="invoice_transactions")
+    is_payment_transaction = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
 
     def __str__(self):
@@ -256,7 +257,8 @@ class InvoiceTransactionMapping(models.Model):
 
 class BillTransactionMapping(models.Model):
     bill_id = models.CharField(max_length=255)  # Unique bill ID
-    transaction = models.ForeignKey(Transaction, on_delete=models.CASCADE)
+    transaction = models.ForeignKey(Transaction, on_delete=models.CASCADE, related_name="bill_transactions")
+    is_payment_transaction = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
 
     def __str__(self):

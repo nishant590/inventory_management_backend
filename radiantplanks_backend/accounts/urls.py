@@ -16,6 +16,8 @@ from .views import (AddAccountAPI,
                     EditOwnerTransactionAPI,
                     DeleteOwnerTransactionAPI,
                     ProfitLossXLSXView,
+                    ProfitLossComparisonView,
+                    ProfitLossComparisonAccrualView,
                     )
 
 urlpatterns = [
@@ -33,6 +35,8 @@ urlpatterns = [
     path('profitandloss/', ProfitLossStatementView.as_view(), name='profitandloss'),
     path('profitandloss-customer/', ProfitLossStatementCustomerView.as_view(), name='profitandloss-customer'),
     path('profitandloss-xlsx/', ProfitLossXLSXView.as_view(), name='profitandloss-xlsx'),
+    path('profitandloss-compare/', ProfitLossComparisonView.as_view(), name='profitandloss-compare'),
+    # path('profitandloss-accrual/', ProfitLossComparisonAccrualView.as_view(), name='profitandloss-compare-accrual'),
     
     path('owner-contribution/', OwnerContributionAPI.as_view(), name='owner-contribution'),
     path('owner-transactions/', GetAllOwnerTransactionsAPI.as_view(), name='owner-transactions'),

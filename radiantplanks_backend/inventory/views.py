@@ -202,7 +202,7 @@ def create_invoice_transaction(customer, invoice_id, products, total_amount, ser
                     TransactionLine.objects.create(
                         transaction=transaction,
                         account=sales_revenue_account,
-                        description=f"Service Sales revenue for {service_product_name}",
+                        description=f"Service Sales revenue for {service_product_name}, invoice_id {invoice_id}",
                         debit_amount=0,
                         credit_amount=total_cost,
                     )
@@ -247,6 +247,7 @@ def create_invoice_transaction(customer, invoice_id, products, total_amount, ser
             InvoiceTransactionMapping.objects.create(
                 transaction=transaction,
                 invoice_id=invoice_id,
+                is_payment_transaction=False,
                 is_active=True
             )
             inventory_account.save()
@@ -274,7 +275,7 @@ def update_invoice_transaction(customer, invoice_id, new_products, new_service_p
     """
     try:
         # Fetch the original transaction linked to the invoice
-        mapping = InvoiceTransactionMapping.objects.get(invoice_id=invoice_id, is_active=True)
+        mapping = InvoiceTransactionMapping.objects.get(invoice_id=invoice_id, is_payment_transaction=False, is_active=True)
         original_transaction = Transaction.objects.get(id=mapping.transaction.id, is_active=True)
         all_transaction_lines = TransactionLine.objects.filter(transaction=mapping.transaction.id, is_active=True).all()
         original_receivable_amount = TransactionLine.objects.filter(transaction=mapping.transaction.id, account__code='AR-001', is_active=True).first().debit_amount
@@ -455,7 +456,7 @@ def delete_invoice_transaction(invoice_id, user):
     """
     try:
         # Fetch the invoice transactions
-        invoice_transactions = InvoiceTransactionMapping.objects.filter(invoice_id=invoice_id, is_active=True)
+        invoice_transactions = InvoiceTransactionMapping.objects.filter(invoice_id=invoice_id, is_payment_transaction=False, is_active=True)
 
         if not invoice_transactions.exists():
             log.app.warning(f"No active transactions found for Invoice ID: {invoice_id}")
@@ -614,6 +615,7 @@ def create_bill_transaction(bill_id, vendor, products, services, total_amount, u
         BillTransactionMapping.objects.create(
             transaction=transaction,
             bill_id=bill_id,
+            is_payment_transaction=False,
             is_active=True
         )
         inventory_account.save()
@@ -633,7 +635,7 @@ def delete_bill_transaction(bill_id, user):
     """
     try:
         # Fetch the invoice transactions
-        bill_transactions = BillTransactionMapping.objects.filter(bill_id=bill_id, is_active=True)
+        bill_transactions = BillTransactionMapping.objects.filter(bill_id=bill_id, is_payment_transaction=False, is_active=True)
 
         if not bill_transactions.exists():
             log.app.warning(f"No active transactions found for Invoice ID: {bill_id}")
@@ -2077,6 +2079,7 @@ class InvoicePaidView(APIView):
                     InvoiceTransactionMapping.objects.create(
                         transaction=transaction,
                         invoice_id=line.get("invoice_id"),
+                        is_payment_transaction=True,
                         is_active=True
                     )
 
@@ -3299,6 +3302,7 @@ class BillPaidView(APIView):
                     BillTransactionMapping.objects.create(
                         transaction=transaction,
                         bill_id=line.get("bill_id"),
+                        is_payment_transaction=True,
                         is_active=True
                     )
 
