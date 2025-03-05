@@ -6,6 +6,7 @@ from django.core.exceptions import ValidationError
 from django.db.models import Sum, Q
 import io
 from django.http import JsonResponse
+from collections import defaultdict
 from rest_framework.pagination import PageNumberPagination
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, Border, Side
@@ -993,63 +994,83 @@ class ProfitLossXLSXView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        start_date = request.query_params.get('start_date')
-        end_date = request.query_params.get('end_date')
+        start_date = request.GET.get('start_date')
+        end_date = request.GET.get('end_date')
 
-        try:
-            if start_date:
-                start_date = datetime.strptime(start_date, "%Y-%m-%d")
-            if end_date:
-                end_date = datetime.strptime(end_date, "%Y-%m-%d")
-        except ValueError:
-            return JsonResponse({'error': 'Invalid date format. Use YYYY-MM-DD.'}, status=400)
-
-        def calculate_balance(account, transaction_type, field):
-            filters = {
-                'account': account,
-                'transaction__transaction_type': transaction_type,
-                'is_active': True,
-                'transaction__is_active': True
-            }
-            if start_date and end_date:
-                filters.update({'transaction__date__gte': start_date, 'transaction__date__lte': end_date})
-            
-            transaction_lines = TransactionLine.objects.filter(**filters)
-            return transaction_lines.aggregate(Sum(field))[f'{field}__sum'] or Decimal('0.00')
-
-        account_categories = {
-            'Income': ['sales_income', 'service_income', 'other_income'],
-            'Expenses': ['cost_of_goods_sold', 'operating_expenses', 'payroll_expenses', 'marketing_expenses', 'administrative_expenses', 'other_expenses']
-        }
-
-        data = []
-        total_income, total_expenses = Decimal('0.00'), Decimal('0.00')
-
-        for category, types in account_categories.items():
-            for acc_type in types:
-                accounts = Account.objects.filter(account_type=acc_type, is_active=True)
-                for account in accounts:
-                    balance = calculate_balance(account, 'income' if category == 'Income' else 'expense', 'credit_amount' if category == 'Income' else 'debit_amount')
-                    data.append({
-                        'Category': category,
-                        'Account Name': account.name,
-                        'Account Code': account.code,
-                        'Balance': float(balance)
-                    })
-                    if category == 'Income':
-                        total_income += balance
-                    else:
-                        total_expenses += balance
+        # Income Accounts
+        income_types = [
+            'sales_income', 'service_income', 'other_income'
+        ]
+        
+        income = []
+        total_income = Decimal('0.00')
+        income.append({"name":"Income","amount":None})
+        for income_type in income_types:
+            accounts = Account.objects.filter(account_type=income_type, is_active=True)
+            for account in accounts:
+                # Calculate total income from transaction lines for this account
+                # Apply date filtering if dates are provided
+                income_query = TransactionLine.objects.filter(
+                    account=account, 
+                    transaction__transaction_type='income',
+                    is_active=True
+                )
+                
+                if start_date:
+                    income_query = income_query.filter(transaction__date__gte=start_date)
+                if end_date:
+                    income_query = income_query.filter(transaction__date__lte=end_date)
+                
+                income_amount = income_query.aggregate(total=Sum('credit_amount'))['total'] or Decimal('0.00')
+                
+                income_info = {
+                    'name': account.name,
+                    'amount': round(float(income_amount),2)
+                }
+                income.append(income_info)
+                total_income += income_amount
+        income.append({"name":"Total","amount":round(float(total_income),2)})
+        
+        # Expense Accounts
+        expense_types = [
+            'cost_of_goods_sold', 'operating_expenses', 
+            'payroll_expenses', 'marketing_expenses', 
+            'administrative_expenses', 'other_expenses'
+        ]
+        
+        expenses = []
+        total_expenses = Decimal('0.00')
+        expenses.append({"name":"Expenses","amount":None})
+        for expense_type in expense_types:
+            accounts = Account.objects.filter(account_type=expense_type, is_active=True)
+            for account in accounts:
+                # Calculate total expenses from transaction lines for this account
+                # Apply date filtering if dates are provided
+                expense_query = TransactionLine.objects.filter(
+                    account=account, 
+                    is_active=True
+                )
+                
+                if start_date:
+                    expense_query = expense_query.filter(transaction__date__gte=start_date)
+                if end_date:
+                    expense_query = expense_query.filter(transaction__date__lte=end_date)
+                
+                expense_amount = expense_query.aggregate(total=Sum('debit_amount'))['total'] or Decimal('0.00')
+                
+                expense_info = {
+                    'name': account.name,
+                    'amount': round(float(expense_amount),2)
+                }
+                expenses.append(expense_info)
+                total_expenses += expense_amount
+        expenses.append({"name":"Total","amount":round(float(total_expenses),2)})
 
         gross_profit = total_income - total_expenses
-        data.append({
-            'Category': 'Summary',
-            'Account Name': 'Gross Profit',
-            'Account Code': '-',
-            'Balance': float(gross_profit)
-        })
+        income += expenses
+        income.append({"name":"Gross Profit","amount":round(float(gross_profit),2)})
         
-        df = pd.DataFrame(data)
+        df = pd.DataFrame(income)
         
         response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         response['Content-Disposition'] = 'attachment; filename=profit_loss_statement.xlsx'
@@ -1060,6 +1081,165 @@ class ProfitLossXLSXView(APIView):
         
         return response
 
+
+class ProfitLossComparisonXLSXView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        period_type = request.GET.get('period_type', 'monthly')  # Options: monthly, quarterly, yearly
+        start_date = request.GET.get('start_date')
+        end_date = request.GET.get('end_date')
+        
+        if not start_date or not end_date:
+            return JsonResponse({'error': 'start_date and end_date are required'}, status=400)
+        
+        start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
+        end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
+        
+        period_ranges = self.generate_periods(start_date, end_date, period_type)
+        
+        report = []
+        for period_start, period_end in period_ranges:
+            report.append(self.generate_detailed_pnl_statement(period_start, period_end))
+
+
+        df = self.convert_to_dataframe(report)
+        
+        # Export to Excel
+        return self.export_to_excel(df)
+    
+    def generate_periods(self, start_date, end_date, period_type):
+        periods = []
+        current_start = start_date
+        
+        while current_start <= end_date:
+            if period_type == 'monthly':
+                next_start = current_start + relativedelta(months=1)
+            elif period_type == 'quarterly':
+                next_start = current_start + relativedelta(months=3)
+            elif period_type == 'yearly':
+                next_start = current_start + relativedelta(years=1)
+            else:
+                raise ValueError("Invalid period type")
+            
+            period_end = min(next_start - timedelta(days=1), end_date)
+            periods.append((current_start, period_end))
+            current_start = next_start
+        
+        return periods
+    
+    def generate_detailed_pnl_statement(self, start_date, end_date):
+        income_types = ['sales_income', 'service_income', 'other_income']
+        expense_types = ['cost_of_goods_sold', 'operating_expenses', 'payroll_expenses', 'marketing_expenses', 'administrative_expenses', 'other_expenses']
+        
+        total_income = Decimal('0.00')
+        total_expenses = Decimal('0.00')
+        income_details = []
+        expense_details = []
+        
+        # Calculate Income
+        for income_type in income_types:
+            accounts = Account.objects.filter(account_type=income_type, is_active=True)
+            for account in accounts:
+                income_amount = TransactionLine.objects.filter(
+                    account=account,
+                    transaction__transaction_type='income',
+                    transaction__date__gte=start_date,
+                    transaction__date__lte=end_date,
+                    is_active=True
+                ).aggregate(total=Sum('credit_amount'))['total'] or Decimal('0.00')
+                total_income += income_amount
+                income_details.append({
+                    'name': account.name,
+                    'code': account.code,
+                    'amount': float(income_amount)
+                })
+        
+        # Calculate Expenses
+        for expense_type in expense_types:
+            accounts = Account.objects.filter(account_type=expense_type, is_active=True)
+            for account in accounts:
+                expense_amount = TransactionLine.objects.filter(
+                    account=account,
+                    transaction__date__gte=start_date,
+                    transaction__date__lte=end_date,
+                    is_active=True
+                ).aggregate(total=Sum('debit_amount'))['total'] or Decimal('0.00')
+                total_expenses += expense_amount
+                expense_details.append({
+                    'name': account.name,
+                    'code': account.code,
+                    'amount': float(expense_amount)
+                })
+        
+        return {
+            'start_date': str(start_date),
+            'end_date': str(end_date),
+            'income': income_details,
+            'expenses': expense_details,
+            'total_income': float(total_income),
+            'total_expenses': float(total_expenses),
+            'net_profit': float(total_income - total_expenses)
+        }
+    
+    def convert_to_dataframe(self, input_data):
+        # Initialize lists to store data
+        main_income_df = pd.DataFrame()
+        main_expenses_df = pd.DataFrame()
+
+        # Process each report entry
+        for entry in input_data:
+            income_data = []
+            expenses_data = []
+            period_label = f"{entry['start_date']} – {entry['end_date']}"
+
+            # Process income
+            for income in entry["income"]:
+                income_data.append({
+                    "Account": income["name"],
+                    "Type": "Income",
+                    period_label: income["amount"]
+                })
+
+            # Process expenses
+            for expense in entry["expenses"]:
+                expenses_data.append({
+                    "Account": expense["name"],
+                    "Type": "Expenses",
+                    period_label: expense["amount"]
+                })
+
+            income_df = pd.DataFrame(income_data)
+            expenses_df = pd.DataFrame(expenses_data)
+            if main_income_df.empty:
+                main_income_df = income_df
+            else:
+                main_income_df = pd.merge(main_income_df, income_df, on=["Account", "Type"], how="outer")
+            if main_expenses_df.empty:
+                main_expenses_df = expenses_df
+            else:
+                main_expenses_df = pd.merge(main_expenses_df, expenses_df, on=["Account", "Type"], how="outer")
+
+        # Combine income and expenses
+        combined_df = pd.concat([main_income_df, main_expenses_df])
+
+        # Fill missing values with 0
+        combined_df = combined_df.fillna(0)
+
+        return combined_df
+
+    def export_to_excel(self, df):
+        # Create HTTP response
+        response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = 'attachment; filename=profit_loss_comparison.xlsx'
+
+        # Write DataFrame to Excel
+        with pd.ExcelWriter(response, engine='openpyxl') as writer:
+            df.to_excel(writer, sheet_name='Profit & Loss Statement', index=False)
+
+        return response    
+    
+    
 
 class AccountsReceivableAPIView(APIView):
     """
