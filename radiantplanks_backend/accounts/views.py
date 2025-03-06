@@ -1225,6 +1225,15 @@ class ProfitLossComparisonXLSXView(APIView):
 
         # Fill missing values with 0
         combined_df = combined_df.fillna(0)
+            # Calculate Net Profit
+        numeric_cols = combined_df.columns[2:]  # Skip 'Account' and 'Type'
+        total_income = combined_df[combined_df["Type"] == "Income"][numeric_cols].sum()
+        total_expenses = combined_df[combined_df["Type"] == "Expenses"][numeric_cols].sum()
+        net_profit = total_income - total_expenses
+
+        # Append net profit row
+        net_profit_row = pd.DataFrame([["Net Profit", "Total"] + net_profit.tolist()], columns=combined_df.columns)
+        combined_df = pd.concat([combined_df, net_profit_row], ignore_index=True)
 
         return combined_df
 
