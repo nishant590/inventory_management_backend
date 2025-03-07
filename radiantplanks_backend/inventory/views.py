@@ -3238,7 +3238,7 @@ class BillPaidView(APIView):
             vendor_id = request.data.get("vendor_id")
             debit_account_id = request.data.get("debit_account_id")  # Bank/Cash account ID
             use_advanced_payment = request.data.get("use_advanced_payment", False)
-
+            bill_payment_date = request.data.get("payment_date")
             if not use_advanced_payment and payment_amount <= 0:
                 return Response({"detail": "Invalid payment amount."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -3261,7 +3261,7 @@ class BillPaidView(APIView):
             with db_transaction.atomic():
                 for bill_data in bills_data:
                     bill_id = bill_data.get("bill_id")
-                    bill_payment_date = bill_data.get("payment_date")
+                    
                     if not bill_payment_date:
                         bill_payment_date = datetime.now().date()
                     allocated_amount = Decimal(bill_data.get("allocated_amount", 0))
@@ -3310,7 +3310,7 @@ class BillPaidView(APIView):
                 transaction = Transaction.objects.create(
                     reference_number=f"PAY-{uuid.uuid4().hex[:6].upper()}",
                     transaction_type="expense",
-                    date=datetime.now(),
+                    date=bill_payment_date,
                     description=f"Payment made to vendor {vendor.business_name}",
                     tax_amount=0,
                     is_active=True,
