@@ -196,6 +196,8 @@ class TransactionLine(models.Model):
     description = models.CharField(max_length=255, blank=True)
     debit_amount = models.DecimalField(max_digits=15, decimal_places=2, default=0, validators=[MinValueValidator(Decimal('0.00'))])
     credit_amount = models.DecimalField(max_digits=15, decimal_places=2, default=0, validators=[MinValueValidator(Decimal('0.00'))])
+    invoice_id = models.IntegerField(null=True, blank=True, default=None)
+    bill_id = models.IntegerField(null=True, blank=True, default=None)
     is_active = models.BooleanField(default=True)
     
     class Meta:

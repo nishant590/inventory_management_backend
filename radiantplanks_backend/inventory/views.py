@@ -175,6 +175,7 @@ def create_invoice_transaction(customer, invoice_id, products, total_amount, ser
                         description=f"Inventory adjustment for {product_name}",
                         debit_amount=0,
                         credit_amount=total_cost,
+                        invoice_id=invoice_id,
                     )
 
                     # Log cost of goods sold (debit COGS)
@@ -184,6 +185,7 @@ def create_invoice_transaction(customer, invoice_id, products, total_amount, ser
                         description=f"Cost of goods sold for {product_name}",
                         debit_amount=total_cost,
                         credit_amount=0,
+                        invoice_id=invoice_id,
                     )
 
                     # Log sales revenue (credit revenue account)
@@ -193,6 +195,7 @@ def create_invoice_transaction(customer, invoice_id, products, total_amount, ser
                         description=f"Sales revenue for {product_name}",
                         debit_amount=0,
                         credit_amount=total_revenue,
+                        invoice_id=invoice_id,
                     )
             if service_products:
                 for service_product in service_products:
@@ -205,6 +208,7 @@ def create_invoice_transaction(customer, invoice_id, products, total_amount, ser
                         description=f"Service Sales revenue for {service_product_name}, invoice_id {invoice_id}",
                         debit_amount=0,
                         credit_amount=total_cost,
+                        invoice_id=invoice_id,
                     )
 
             if tax_amount>0:
@@ -216,6 +220,7 @@ def create_invoice_transaction(customer, invoice_id, products, total_amount, ser
                     description=f"Tax Payable for invoice to {customer.business_name}",
                     debit_amount=0,
                     credit_amount=tax_amount,
+                    invoice_id=invoice_id,
                 )
                 tax_amount_account.save()
 
@@ -226,6 +231,7 @@ def create_invoice_transaction(customer, invoice_id, products, total_amount, ser
                 description=f"Account receivable for invoice to {customer.business_name}",
                 debit_amount=total_amount,
                 credit_amount=0,
+                invoice_id=invoice_id,
             )
 
             # Update account balances
@@ -363,6 +369,7 @@ def update_invoice_transaction(customer, invoice_id, new_products, new_service_p
                     description=f"Inventory adjustment for {product_name}",
                     debit_amount=0,
                     credit_amount=total_cost,
+                    invoice_id=invoice_id,
                 )
 
                 # Debit COGS
@@ -372,6 +379,7 @@ def update_invoice_transaction(customer, invoice_id, new_products, new_service_p
                     description=f"Cost of goods sold for {product_name}",
                     debit_amount=total_cost,
                     credit_amount=0,
+                    invoice_id=invoice_id,
                 )
 
                 # Credit Sales Revenue
@@ -381,6 +389,7 @@ def update_invoice_transaction(customer, invoice_id, new_products, new_service_p
                     description=f"Sales revenue for {product_name}",
                     debit_amount=0,
                     credit_amount=total_revenue,
+                    invoice_id=invoice_id,
                 )
 
             # Process new service products
@@ -394,6 +403,7 @@ def update_invoice_transaction(customer, invoice_id, new_products, new_service_p
                     description=f"Service Sales revenue for {service_name}",
                     debit_amount=0,
                     credit_amount=total_revenue,
+                    invoice_id=invoice_id,
                 )
 
             # Handle tax
@@ -404,6 +414,7 @@ def update_invoice_transaction(customer, invoice_id, new_products, new_service_p
                     description=f"Tax Payable for invoice to {customer.business_name}",
                     debit_amount=0,
                     credit_amount=new_tax_amount,
+                    invoice_id=invoice_id,
                 )
                 tax_account.balance += Decimal(new_tax_amount)
 
@@ -414,6 +425,7 @@ def update_invoice_transaction(customer, invoice_id, new_products, new_service_p
                 description=f"Account receivable for updated invoice to {customer.business_name}",
                 debit_amount=new_total_amount,
                 credit_amount=0,
+                invoice_id=invoice_id,
             )
 
             # Update account balances with new transaction amounts
@@ -571,6 +583,7 @@ def create_bill_transaction(bill_id, vendor, products, services, total_amount, u
                 description=f"Inventory addition for {product_name}",
                 debit_amount=temp_total_cost,
                 credit_amount=0,
+                bill_id=bill_id,
             )
 
         for service in services:
@@ -582,6 +595,7 @@ def create_bill_transaction(bill_id, vendor, products, services, total_amount, u
                 account=cogs_account,
                 description=f"Service addition for {service_name}",
                 debit_amount=temp_total_cost,
+                bill_id=bill_id,
                 credit_amount=0)
             services_total_cost += temp_total_cost
             
@@ -592,6 +606,7 @@ def create_bill_transaction(bill_id, vendor, products, services, total_amount, u
             description=f"Accounts payable for bill to {vendor.business_name}",
             debit_amount=0,
             credit_amount=total_amount,
+            bill_id=bill_id,
         )
 
         # Update payable tracking
@@ -1643,6 +1658,22 @@ class RetrieveInvoiceView(APIView):
                 "created_date": invoice.created_date,
                 "items": list(invoice_items),
             }
+            payment_details = InvoiceTransactionMapping.objects.filter(invoice_id=id, is_payment_transaction=True)
+
+            # Fetch transaction lines related to the bill
+            transaction_lines = []
+            for mapping in payment_details:
+                transaction = mapping.transaction
+                lines = TransactionLine.objects.filter(transaction=transaction, invoice_id=id).values(
+                    "id", "description", "debit_amount", "credit_amount", "account__code", "account__name"
+                )
+                for line in lines:
+                    transaction_lines.append({
+                        "transaction_date": transaction.date,
+                        "value": line.get("credit_amount")
+                    })
+            if transaction_lines:
+                invoice_data["transaction_lines"] = transaction_lines
             return Response(invoice_data, status=status.HTTP_200_OK)
 
         except Invoice.DoesNotExist:
@@ -1767,7 +1798,8 @@ class UpdateInvoiceView(APIView):
                             if quantity_in_tiles > original_quantity:
                                 # More quantity requested; deduct the extra amount
                                 extra_needed = quantity_in_tiles - original_quantity
-                                updated_items.append({"product_id": product_id, 
+                                updated_items.append({"product_id": product_id,
+                                                      "product_name":product.product_name, 
                                                       "quantity": quantity_in_tiles, 
                                                       "unit_price": unit_price,
                                                       "unit_cost": product.purchase_price})
@@ -1779,12 +1811,14 @@ class UpdateInvoiceView(APIView):
                                 # Less quantity requested; return the extra amount to inventory
                                 extra_returned = original_quantity - quantity_in_tiles
                                 updated_items.append({"product_id": product_id, 
+                                                      "product_name":product.product_name,
                                                       "quantity": quantity_in_tiles, 
                                                       "unit_price": unit_price,
                                                       "unit_cost": product.purchase_price})
                                 product.stock_quantity += extra_returned
                             elif quantity_in_tiles == original_quantity:
                                 updated_items.append({"product_id": product_id, 
+                                                      "product_name":product.product_name,
                                                       "quantity": quantity_in_tiles, 
                                                       "unit_price": unit_price,
                                                       "unit_cost": product.purchase_price})
@@ -1804,6 +1838,7 @@ class UpdateInvoiceView(APIView):
                                                 status=status.HTTP_400_BAD_REQUEST)
                             product.stock_quantity -= quantity_in_tiles
                             updated_items.append({"product_id": product.id, 
+                                                  "product_name": product.product_name,
                                                   "quantity": quantity_in_tiles, 
                                                   "unit_price": unit_price,
                                                   "unit_cost":product.purchase_price})
@@ -2052,6 +2087,7 @@ class InvoicePaidView(APIView):
                         description=line["description"],
                         debit_amount=line['credit_amount'],
                         credit_amount=line["debit_amount"],
+                        invoice_id=line.get("invoice_id"),
                     )
 
                 # Log credit to bank/cash account
@@ -3107,6 +3143,22 @@ class RetrieveBillView(APIView):
                 "attachments": bill.attachments,
                 "items": list(items)
             }
+            payment_details = BillTransactionMapping.objects.filter(bill_id=id, is_payment_transaction=True)
+
+            # Fetch transaction lines related to the bill
+            transaction_lines = []
+            for mapping in payment_details:
+                transaction = mapping.transaction
+                lines = TransactionLine.objects.filter(transaction=transaction, bill_id=id).values(
+                    "id", "description", "debit_amount", "credit_amount", "account__code", "account__name"
+                )
+                for line in lines:
+                    transaction_lines.append({
+                        "transaction_date": transaction.date,
+                        "value": line.get("debit_amount")
+                    })
+            if transaction_lines:
+                bill_data["transaction_lines"] = transaction_lines
             return Response(bill_data, status=status.HTTP_200_OK)
         except Bill.DoesNotExist:
             return Response({"detail": "Bill not found."}, status=status.HTTP_404_NOT_FOUND)
@@ -3271,8 +3323,9 @@ class BillPaidView(APIView):
                         transaction=transaction,
                         account=Account.objects.get(code="AP-001"),
                         description=f"Payment for bill {bill.id}",
-                        debit_amount=payment_for_bill,
+                        debit_amount=line.get("credit_amount"),
                         credit_amount=0,
+                        bill_id=line.get("bill_id"),
                     )
 
                 # Log debit from bank/cash account
