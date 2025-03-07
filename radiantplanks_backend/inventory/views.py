@@ -1996,6 +1996,7 @@ class InvoicePaidView(APIView):
             customer_id = request.data.get("customer_id")
             credit_account_id = request.data.get("credit_account_id")  # Bank/Cash account ID
             use_advanced_payment = request.data.get("use_advanced_payment", False)
+            invoice_payment_date = request.data.get('payment_date')
 
 
 
@@ -2026,7 +2027,6 @@ class InvoicePaidView(APIView):
                 for invoice_data in invoices_data:
                     invoice_id = invoice_data.get("invoice_id")
                     allocated_amount = Decimal(invoice_data.get("allocated_amount", 0))
-                    invoice_payment_date = invoice_data.get('payment_date')
                     if not invoice_payment_date:
                         invoice_payment_date = datetime.now().date()
                     allocated_amount = round(allocated_amount,2)
@@ -2072,7 +2072,7 @@ class InvoicePaidView(APIView):
                 transaction = Transaction.objects.create(
                     reference_number=f"PAY-{uuid.uuid4().hex[:6].upper()}",
                     transaction_type="income",
-                    date=datetime.now(),
+                    date=invoice_payment_date,
                     description=f"Payment received from customer {customer.business_name}",
                     tax_amount=0,
                     is_active=True,
