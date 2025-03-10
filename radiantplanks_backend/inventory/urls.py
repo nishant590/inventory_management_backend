@@ -34,6 +34,9 @@ from .views import (CategoryListCreateView,
                     DeleteLostProductView,
 
                     TestEmailView,
+                    InventoryHistoryReportView,
+                    DetailedInventoryReportView,
+                    DetailedSalesReportView,
                     )
 
 urlpatterns = [
@@ -80,4 +83,7 @@ urlpatterns = [
     path('lost-product/delete/<int:id>/', DeleteLostProductView.as_view(), name='lost-product-delete'),
 
     path('test/email-server/', TestEmailView.as_view(), name='test-email-server'),
+    path('inventory-history-report/', InventoryHistoryReportView.as_view(), name='inventory-history-report'),
+    path('detailed-inventory-report/', DetailedInventoryReportView.as_view(), name='detailed-inventory-report'),
+    path('detailed-sales-report/', DetailedSalesReportView.as_view(), name='detailed-sales-report'),
 ]

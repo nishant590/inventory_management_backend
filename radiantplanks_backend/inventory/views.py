@@ -3698,3 +3698,152 @@ class DeleteLostProductView(APIView):
             log.trace.trace(f"Error occurred {traceback.format_exc()}")
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         
+
+class InventoryHistoryReportView(APIView):
+    def get(self, request):
+        start_date = request.GET.get('start_date')
+        end_date = request.GET.get('end_date')
+        
+        if start_date and end_date:
+            start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+            end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+        else:
+            return Response({"error": "Please provide start_date and end_date parameters."})
+        
+        # Fetching all relevant transactions
+        sales = InvoiceItem.objects.filter(invoice__bill_date__range=[start_date, end_date])
+        purchases = BillItems.objects.filter(bill__bill_date__range=[start_date, end_date])
+        losses = LostProduct.objects.filter(loss_date__range=[start_date, end_date])
+        
+        report_data = []
+        
+        # Calculating initial inventory
+        initial_inventory = {}
+        for product in Product.objects.all():
+            initial_stock = product.stock_quantity
+            # Adjust initial stock based on transactions before the start date
+            previous_purchases = BillItems.objects.filter(bill__bill_date__lt=start_date, product=product)
+            previous_sales = InvoiceItem.objects.filter(invoice__bill_date__lt=start_date, product=product)
+            previous_losses = LostProduct.objects.filter(loss_date__lt=start_date, product=product)
+            
+            for purchase in previous_purchases:
+                initial_stock += purchase.quantity
+            for sale in previous_sales:
+                initial_stock -= sale.quantity
+            for loss in previous_losses:
+                initial_stock -= loss.quantity_lost
+            
+            initial_inventory[product.product_name] = initial_stock
+        
+        # Processing transactions
+        for sale in sales:
+            transaction = {
+                'date': sale.invoice.bill_date,
+                'type': 'Sale',
+                'product_name': sale.product.product_name,
+                'quantity': -sale.quantity,  # Negative for sales
+                'unit_price': sale.unit_price,
+            }
+            report_data.append(transaction)
+        
+        for purchase in purchases:
+            transaction = {
+                'date': purchase.bill.bill_date,
+                'type': 'Purchase',
+                'product_name': purchase.product.product_name,
+                'quantity': purchase.quantity,  # Positive for purchases
+                'unit_price': purchase.unit_price,
+            }
+            report_data.append(transaction)
+        
+        for loss in losses:
+            transaction = {
+                'date': loss.loss_date,
+                'type': 'Loss',
+                'product_name': loss.product.product_name,
+                'quantity': -loss.quantity_lost,  # Negative for losses
+                'unit_price': loss.unit_cost,
+            }
+            report_data.append(transaction)
+        
+        # Sorting transactions by date
+        report_data.sort(key=lambda x: x['date'])
+        
+        # Calculating closing inventory
+        closing_inventory = {}
+        for product in Product.objects.all():
+            closing_stock = initial_inventory.get(product.product_name, 0)
+            # Adjust closing stock based on transactions within the period
+            period_purchases = BillItems.objects.filter(bill__bill_date__range=[start_date, end_date], product=product)
+            period_sales = InvoiceItem.objects.filter(invoice__bill_date__range=[start_date, end_date], product=product)
+            period_losses = LostProduct.objects.filter(loss_date__range=[start_date, end_date], product=product)
+            
+            for purchase in period_purchases:
+                closing_stock += purchase.quantity
+            for sale in period_sales:
+                closing_stock -= sale.quantity
+            for loss in period_losses:
+                closing_stock -= loss.quantity_lost
+            
+            closing_inventory[product.product_name] = closing_stock
+        
+        # Combining initial inventory, transactions, and closing inventory into the report
+        report = {
+            'initial_inventory': initial_inventory,
+            'transactions': report_data,
+            'closing_inventory': closing_inventory,
+        }
+        
+        return Response(report)
+
+
+class DetailedInventoryReportView(APIView):
+    def get(self, request):
+        products = Product.objects.filter(product_type="product",is_active=True)
+        inventory_data = []
+        total_inventory_value = 0
+        
+        for product in products:
+            item = {
+                'product_name': product.product_name,
+                'sku': product.sku,
+                'barcode': product.barcode,
+                'stock_quantity': product.stock_quantity,
+                'stock_purchase_price': product.purchase_price,
+                'stock_value': round(Decimal(product.stock_quantity * product.purchase_price), 2),
+                'reorder_level': product.reorder_level,
+                'batch_lot_number': product.batch_lot_number,
+                'as_on_date': product.as_on_date,
+                'specifications': product.specifications,
+                'tags': product.tags,
+                'images': product.images,
+            }
+            inventory_data.append(item)
+            total_inventory_value += item['stock_value']
+        
+        return Response(inventory_data)
+
+
+class DetailedSalesReportView(APIView):
+    def get(self, request):
+        invoices = Invoice.objects.filter(is_active=True)
+        sales_data = []
+        
+        for invoice in invoices:
+            invoice_items = InvoiceItem.objects.filter(invoice=invoice, is_active=True)
+            for item in invoice_items:
+                sales_item = {
+                    'invoice_id': invoice.id,
+                    'invoice_date': invoice.bill_date,
+                    'customer_name': invoice.customer.business_name,
+                    'customer_email': invoice.customer_email,
+                    'payment_status': invoice.payment_status,
+                    'product_name': item.product.product_name,
+                    'sku': item.product.sku,
+                    'quantity_sold': item.quantity,
+                    'unit_price': item.unit_price,
+                    'total_amount': item.amount,
+                }
+                sales_data.append(sales_item)
+        
+        return Response(sales_data)
