@@ -1510,9 +1510,9 @@ class CreateInvoiceView(APIView):
                                                     "unit_price": unit_price,
                                                     "unit_cost": product.purchase_price})
                         product.save()
-                        line_total = unit_price * quantity_in_tiles
+                        line_total = round((unit_price * quantity_in_tiles),2)
                     elif product.product_type == 'service':
-                        line_total = unit_price
+                        line_total = round(unit_price,2)
                         service_products.append({'product_name': product.product_name,
                                                     'unit_price': line_total})
 
@@ -1521,7 +1521,8 @@ class CreateInvoiceView(APIView):
                         invoice=invoice,
                         product=product,
                         description=description,
-                        quantity=quantity_in_tiles,  # Store as selected unit (pallets, boxes, sqf, etc.)
+                        quantity=quantity_in_tiles,
+                        amount=line_total,
                         unit_price=unit_price,
                         created_by=request.user
                     )
@@ -1827,6 +1828,7 @@ class UpdateInvoiceView(APIView):
                             invoice_item = InvoiceItem.objects.get(invoice=invoice, product=product)
                             invoice_item.quantity = quantity_in_tiles
                             invoice_item.unit_price = unit_price
+                            invoice_item.amount = round((quantity_in_tiles * unit_price),2)
                             invoice_item.save()
 
                             # Remove from the original_product_map after processing
@@ -1848,6 +1850,7 @@ class UpdateInvoiceView(APIView):
                                 invoice=invoice,
                                 product=product,
                                 description=item_data.get("description", ""),
+                                amount=round((quantity_in_tiles * unit_price),2),
                                 quantity=quantity_in_tiles,
                                 unit_price=unit_price,
                                 created_by=request.user
@@ -1858,6 +1861,7 @@ class UpdateInvoiceView(APIView):
                             invoice_item = InvoiceItem.objects.get(invoice=invoice, product=product)
                             invoice_item.quantity = new_quantity
                             invoice_item.unit_price = unit_price
+                            invoice_item.amount = round((new_quantity * unit_price),2)
                             invoice_item.save()
                             
                             new_services.append({"product_name": product.product_name, "unit_price": unit_price})
@@ -1872,6 +1876,7 @@ class UpdateInvoiceView(APIView):
                                 product=product,
                                 description=item_data.get("description", ""),
                                 quantity=new_quantity,
+                                amount=round((new_quantity * unit_price), 2),
                                 unit_price=unit_price,
                                 created_by=request.user
                             )
@@ -3826,7 +3831,16 @@ class DetailedInventoryReportView(APIView):
 
 class DetailedSalesReportView(APIView):
     def get(self, request):
+        start_date = request.GET.get('start_date')
+        end_date = request.GET.get('end_date')
+        
         invoices = Invoice.objects.filter(is_active=True)
+        
+        if start_date and end_date:
+            start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+            end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+            invoices = invoices.filter(bill_date__range=[start_date, end_date])
+        
         sales_data = []
         
         for invoice in invoices:

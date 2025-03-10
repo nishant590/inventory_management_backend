@@ -7,6 +7,7 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'radiantplanks_backend.settings'
 django.setup()
 
 from accounts.models import TransactionLine  # Replace 'your_app' with your actual app name
+from inventory.models import InvoiceItem
 
 def update_transaction_lines():
     transaction_lines = TransactionLine.objects.all()
@@ -30,5 +31,16 @@ def update_transaction_lines():
 
     print("Transaction lines updated successfully.")
 
+def update_invoice_items():
+    invoice_items = InvoiceItem.objects.all()
+
+    for item in invoice_items:
+        if item.amount == 0 or item.amount is None:
+            item.amount = item.unit_price * item.quantity
+            item.save()
+
+    print("Invoice items updated successfully.")
+
+
 if __name__ == "__main__":
-    update_transaction_lines()
+    update_invoice_items()
