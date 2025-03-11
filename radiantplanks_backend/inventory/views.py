@@ -55,6 +55,7 @@ from radiantplanks_backend.logging import log
 import asyncio
 from pyppeteer import launch
 from authentication.views import audit_log
+from expense.models import Expense, ExpenseItems
 import pdfkit
 import tempfile
 # Get the default logger
@@ -3820,6 +3821,7 @@ class DetailedInventoryReportView(APIView):
                 'batch_lot_number': product.batch_lot_number,
                 'as_on_date': product.as_on_date,
                 'specifications': product.specifications,
+                'description': product.purchase_description,
                 'tags': product.tags,
                 'images': product.images,
             }
@@ -3861,3 +3863,74 @@ class DetailedSalesReportView(APIView):
                 sales_data.append(sales_item)
         
         return Response(sales_data)
+
+
+class ExpenseReportView(APIView):
+    def get(self, request):
+        start_date = request.GET.get('start_date')
+        end_date = request.GET.get('end_date')
+        report_type = request.GET.get('report_type')
+        
+        if start_date and end_date:
+            start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+            end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+        else:
+            return Response({"error": "Please provide start_date and end_date parameters."})
+        
+        if report_type not in ['accrual', 'cash']:
+            return Response({"error": "Invalid report_type. Please use 'accrual' or 'cash'."})
+        
+        report_data = []
+        
+        if report_type == 'accrual':
+            # Fetching all relevant expenses and bills
+            expenses = Expense.objects.filter(payment_date__range=[start_date, end_date])
+            bills = Bill.objects.filter(bill_date__range=[start_date, end_date])
+            
+            # Processing expenses
+            for expense in expenses:
+                expense_items = ExpenseItems.objects.filter(expense=expense, is_active=True)
+                for item in expense_items:
+                    expense_item = {
+                        'date': expense.payment_date,
+                        'type': 'Expense',
+                        'vendor_name': expense.vendor.business_name,
+                        'description': item.description,
+                        'amount': item.price,
+                        'vendor_expense': expense.expense_number,
+                    }
+                    report_data.append(expense_item)
+            
+            # Processing bills
+            for bill in bills:
+                bill_items = BillItems.objects.filter(bill=bill, is_active=True)
+                for item in bill_items:
+                    bill_item = {
+                        'date': bill.bill_date.strftime('%Y-%m-%d'),
+                        'type': 'Bill',
+                        'vendor_name': bill.vendor.business_name,
+                        'description': item.description,
+                        'amount': item.line_total(),
+                        'vendor_bill': bill.bill_number,
+                    }
+                    report_data.append(bill_item)
+        
+        elif report_type == 'cash':
+            # Fetching all relevant vendor payments
+            vendor_payments = VendorPaymentDetails.objects.filter(payment_date__range=[start_date, end_date]).exclude(payment_method='inventory')
+            
+            for payment in vendor_payments:
+                payment_item = {
+                    'date': payment.payment_date.strftime('%Y-%m-%d'),
+                    'type': 'Payment',
+                    'vendor_name': payment.vendor.business_name,
+                    'payment_method': payment.payment_method,
+                    'amount': payment.payment_amount,
+                    'transaction_reference': payment.transaction_reference_id,
+                }
+                report_data.append(payment_item)
+        
+        # Sorting transactions by date
+        # report_data.sort(key=lambda x: x['date'])
+        
+        return Response(report_data)

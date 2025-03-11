@@ -37,6 +37,7 @@ from .views import (CategoryListCreateView,
                     InventoryHistoryReportView,
                     DetailedInventoryReportView,
                     DetailedSalesReportView,
+                    ExpenseReportView,
                     )
 
 urlpatterns = [
@@ -86,4 +87,5 @@ urlpatterns = [
     path('inventory-history-report/', InventoryHistoryReportView.as_view(), name='inventory-history-report'),
     path('detailed-inventory-report/', DetailedInventoryReportView.as_view(), name='detailed-inventory-report'),
     path('detailed-sales-report/', DetailedSalesReportView.as_view(), name='detailed-sales-report'),
+    path('detailed-expense-report/', ExpenseReportView.as_view(), name='detailed-expense-report'),
 ]
