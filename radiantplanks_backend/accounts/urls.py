@@ -20,6 +20,7 @@ from .views import (AddAccountAPI,
                     ProfitLossComparisonView,
                     ProfitLossComparisonAccrualView,
                     ProfitLossComparisonXLSXView,
+                    BankAccountTransactionsAPIView
                     )
 
 urlpatterns = [
@@ -47,4 +48,6 @@ urlpatterns = [
     path('owner-takeout-money/', OwnerTakeOutMoneyAPI.as_view(), name='owner-takeout-money'),
     path('owner-contribution-edit/<int:id>/', EditOwnerTransactionAPI.as_view(), name='owner-contribution-edit'),
     path('owner-contribution-delete/<int:id>/', DeleteOwnerTransactionAPI.as_view(), name='owner-contribution-delete'),
-]
+  
+    path('view-bank-transactions/', BankAccountTransactionsAPIView.as_view(), name='view-bank-transactions'),
+] 

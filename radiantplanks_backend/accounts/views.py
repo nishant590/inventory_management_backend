@@ -1713,3 +1713,64 @@ class TransactionListView(APIView):
 
         # Return the paginated response
         return paginator.get_paginated_response(response_data)
+    
+
+
+
+class BankAccountTransactionsAPIView(APIView):
+    # Use pagination class
+    pagination_class = PageNumberPagination
+
+    def get(self, request, *args, **kwargs):
+        # Get the account_id from query parameters
+        account_id = request.GET.get('account_id', None)
+        start_date = request.GET.get('start_date')
+        end_date = request.GET.get('end_date')
+
+        if not account_id:
+            return Response(
+                {"error": "account_id is required as a query parameter."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Fetch transactions that have at least one TransactionLine linked to the specified account
+        transactions = Transaction.objects.filter(lines__account_id=account_id).distinct()
+
+        if start_date and end_date:
+            transactions = transactions.filter(date__range=[start_date, end_date])
+
+        # Prepare the response data
+        response_data = []
+        for transaction in transactions:
+            # Fetch transaction lines for the current transaction and the specified account
+            transaction_lines = TransactionLine.objects.filter(transaction=transaction, account_id=account_id)
+
+            # Build the transaction data
+            transaction_data = {
+                "id": transaction.id,
+                "reference_number": transaction.reference_number,
+                "transaction_type": transaction.transaction_type,
+                "date": transaction.date,
+                "description": transaction.description,
+                "lines": []
+            }
+
+            # Add transaction lines to the transaction data
+            for line in transaction_lines:
+                transaction_data["lines"].append({
+                    "id": line.id,
+                    "account": line.account.id,
+                    "description": line.description,
+                    "debit_amount": str(line.debit_amount),  # Convert Decimal to string
+                    "credit_amount": str(line.credit_amount),  # Convert Decimal to string
+                    "invoice_id": line.invoice_id,
+                    "bill_id": line.bill_id,
+                    "is_active": line.is_active
+                })
+
+            # Add the transaction data to the response
+            response_data.append(transaction_data)
+
+        # Return the paginated response
+        return Response({"data":response_data}, status=status.HTTP_200_OK)
+    
