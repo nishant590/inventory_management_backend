@@ -1316,7 +1316,7 @@ class ProductRetrieveView(APIView):
             "no_of_tiles": product.no_of_tiles,
             "as_on_date": product.as_on_date,
             "purchase_price": product.purchase_price,
-            "purchase_price_per_sqf": round((product.purchase_price/product.tile_area), 2),
+            "purchase_price_per_sqf": round((product.purchase_price/product.tile_area), 2) if product.tile_area else None,
             "specifications": product.specifications,
             "tags": product.tags,
             "images": product.images,
@@ -3934,3 +3934,83 @@ class ExpenseReportView(APIView):
         # report_data.sort(key=lambda x: x['date'])
         
         return Response(report_data)
+
+
+class CustomerPaymentsReportView(APIView):
+    def get(self, request):
+        # Extract query parameters
+        customer_id = request.GET.get('customer_id')
+        payment_method = request.GET.get('payment_method')
+        start_date = request.GET.get('start_date')
+        end_date = request.GET.get('end_date')
+        transaction_reference_id = request.GET.get('transaction_reference_id')
+        cheque_number = request.GET.get('cheque_number')
+        page = int(request.GET.get('page', 1))
+        page_size = int(request.GET.get('page_size', 20))
+
+        # Build the base queryset
+        queryset = CustomerPaymentDetails.objects.all()
+
+        # Apply filters
+        if customer_id:
+            queryset = queryset.filter(customer_id=customer_id)
+        if payment_method:
+            queryset = queryset.filter(payment_method=payment_method)
+        if start_date:
+            start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+            queryset = queryset.filter(payment_date__gte=start_date)
+        if end_date:
+            end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+            queryset = queryset.filter(payment_date__lte=end_date)
+        if transaction_reference_id:
+            queryset = queryset.filter(transaction_reference_id=transaction_reference_id)
+        if cheque_number:
+            queryset = queryset.filter(cheque_number=cheque_number)
+        queryset = queryset.order_by('-payment_date')
+        # Pagination
+        total_count = queryset.count()
+        offset = (page - 1) * page_size
+        queryset = queryset[offset:offset + page_size]
+
+        # Prepare the response data
+        results = []
+        for payment in queryset:
+            results.append({
+                'customer_id': payment.customer.customer_id,
+                'customer_name': payment.customer.business_name,  # Assuming Customer model has a `name` field
+                'transaction_id': payment.transaction.id,
+                'payment_method': payment.payment_method,
+                'payment_amount': str(payment.payment_amount),  # Convert Decimal to string
+                'payment_date': payment.payment_date.strftime('%Y-%m-%d'),
+                'transaction_reference_id': payment.transaction_reference_id,
+                'bank_name': payment.bank_name,
+                'cheque_number': payment.cheque_number,
+                'is_invoice': payment.payment_method.lower() == 'cost of goods sold',
+            })
+
+        response_data = {
+            'count': total_count,
+            'next': self._get_next_page_url(request, page, page_size, total_count),
+            'previous': self._get_previous_page_url(request, page, page_size),
+            'results': results,
+        }
+
+        return Response(response_data, status=status.HTTP_200_OK)
+
+    def _get_next_page_url(self, request, page, page_size, total_count):
+        if page * page_size >= total_count:
+            return None
+        return self._get_page_url(request, page + 1)
+
+    def _get_previous_page_url(self, request, page, page_size):
+        if page <= 1:
+            return None
+        return self._get_page_url(request, page - 1)
+
+    def _get_page_url(self, request, page):
+        url = request.build_absolute_uri()
+        if 'page=' in url:
+            url = url.split('page=')[0] + f'page={page}'
+        else:
+            url += f'&page={page}' if '?' in url else f'?page={page}'
+        return url
