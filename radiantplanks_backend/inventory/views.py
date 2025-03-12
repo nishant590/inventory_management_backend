@@ -4185,7 +4185,7 @@ class ExpenseReportView(APIView):
                     bill_items = BillItems.objects.filter(bill=bill, is_active=True)
                     for item in bill_items:
                         bill_item = {
-                            'date': bill.bill_date.strftime('%Y-%m-%d'),
+                            'date': bill.bill_date.date(),
                             'type': 'Bill',
                             'vendor_name': bill.vendor.business_name,
                             'description': item.description,
@@ -4200,7 +4200,7 @@ class ExpenseReportView(APIView):
                 
                 for payment in vendor_payments:
                     payment_item = {
-                        'date': payment.payment_date.strftime('%Y-%m-%d'),
+                        'date': payment.payment_date.date(),
                         'type': 'Payment',
                         'vendor_name': payment.vendor.business_name,
                         'payment_method': payment.payment_method,
@@ -4210,7 +4210,7 @@ class ExpenseReportView(APIView):
                     report_data.append(payment_item)
             
             # Sorting transactions by date
-            # report_data.sort(key=lambda x: x['date'])
+            report_data.sort(key=lambda x: x['date'], reverse=True)
             
             return Response(report_data, status=status.HTTP_200_OK)
         except Exception as e:
@@ -4246,7 +4246,7 @@ class ExpenseReportExcelExportView(APIView):
                     expense_items = ExpenseItems.objects.filter(expense=expense, is_active=True)
                     for item in expense_items:
                         expense_item = {
-                            'Date': expense.payment_date.strftime('%Y-%m-%d'),
+                            'Date': expense.payment_date,
                             'Type': 'Expense',
                             'Vendor Name': expense.vendor.business_name,
                             'Description': item.description,
@@ -4260,7 +4260,7 @@ class ExpenseReportExcelExportView(APIView):
                     bill_items = BillItems.objects.filter(bill=bill, is_active=True)
                     for item in bill_items:
                         bill_item = {
-                            'Date': bill.bill_date.strftime('%Y-%m-%d'),
+                            'Date': bill.bill_date.date(),
                             'Type': 'Bill',
                             'Vendor Name': bill.vendor.business_name,
                             'Description': item.description,
@@ -4275,7 +4275,7 @@ class ExpenseReportExcelExportView(APIView):
                 
                 for payment in vendor_payments:
                     payment_item = {
-                        'Date': payment.payment_date.strftime('%Y-%m-%d'),
+                        'Date': payment.payment_date.date(),
                         'Type': 'Payment',
                         'Vendor Name': payment.vendor.business_name,
                         'Payment Method': payment.payment_method,
@@ -4285,6 +4285,7 @@ class ExpenseReportExcelExportView(APIView):
                     report_data.append(payment_item)
             
             # Convert report data to a pandas DataFrame
+            report_data.sort(key=lambda x: x['date'], reverse=True)
             df = pd.DataFrame(report_data)
 
             # Create the HttpResponse object with the appropriate Excel headers
