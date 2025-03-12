@@ -1734,7 +1734,7 @@ class BankAccountTransactionsAPIView(APIView):
             )
             
         # Fetch transactions that have at least one TransactionLine linked to the specified account
-        transactions = Transaction.objects.filter(lines__account_id=account_id).distinct()
+        transactions = Transaction.objects.filter(lines__account_id=account_id, is_active=True).distinct()
         
         if start_date and end_date:
             transactions = transactions.filter(date__range=[start_date, end_date])
@@ -1762,7 +1762,7 @@ class BankAccountTransactionsAPIView(APIView):
         response_data = []
         for transaction in paginated_transactions:
             # Fetch transaction lines for the current transaction and the specified account
-            transaction_lines = TransactionLine.objects.filter(transaction=transaction, account_id=account_id)
+            transaction_lines = TransactionLine.objects.filter(transaction=transaction, account_id=account_id, is_active=True)
             
             # Build the transaction data
             transaction_data = {
@@ -1811,7 +1811,7 @@ class BankAccountTransactionsExportAPIView(APIView):
             )
             
         # Fetch transactions that have at least one TransactionLine linked to the specified account
-        transactions = Transaction.objects.filter(lines__account_id=account_id).distinct()
+        transactions = Transaction.objects.filter(lines__account_id=account_id, is_active=True).distinct()
         
         if start_date and end_date:
             transactions = transactions.filter(date__range=[start_date, end_date])
@@ -1820,7 +1820,7 @@ class BankAccountTransactionsExportAPIView(APIView):
         data = []
         for transaction in transactions:
             # Fetch transaction lines for the current transaction and the specified account
-            transaction_lines = TransactionLine.objects.filter(transaction=transaction, account_id=account_id)
+            transaction_lines = TransactionLine.objects.filter(transaction=transaction, account_id=account_id, is_active=True)
             
             for line in transaction_lines:
                 data.append({
@@ -1834,9 +1834,6 @@ class BankAccountTransactionsExportAPIView(APIView):
                     'Line Description': line.description,
                     'Debit Amount': float(line.debit_amount) if line.debit_amount else 0,
                     'Credit Amount': float(line.credit_amount) if line.credit_amount else 0,
-                    'Invoice ID': line.invoice_id,
-                    'Bill ID': line.bill_id,
-                    'Is Active': "Yes" if line.is_active else "No"
                 })
         
         # Create DataFrame from data
