@@ -3747,7 +3747,7 @@ class InventoryHistoryReportView(APIView):
         # Processing transactions
         for sale in sales:
             transaction = {
-                'date': sale.invoice.bill_date,
+                'date': sale.invoice.bill_date.date(),
                 'type': 'Sale',
                 'product_name': sale.product.product_name,
                 'quantity': -sale.quantity,  # Negative for sales
@@ -3757,7 +3757,7 @@ class InventoryHistoryReportView(APIView):
         
         for purchase in purchases:
             transaction = {
-                'date': purchase.bill.bill_date,
+                'date': purchase.bill.bill_date.date(),
                 'type': 'Purchase',
                 'product_name': purchase.product.product_name,
                 'quantity': purchase.quantity,  # Positive for purchases
@@ -3846,7 +3846,7 @@ class InventoryHistoryXLSXReportView(APIView):
         # Processing transactions
         for sale in sales:
             transaction = {
-                'date': sale.invoice.bill_date,
+                'date': sale.invoice.bill_date.date(),
                 'type': 'Sale',
                 'product_name': sale.product.product_name,
                 'quantity': -sale.quantity,  # Negative for sales
@@ -3856,7 +3856,7 @@ class InventoryHistoryXLSXReportView(APIView):
         
         for purchase in purchases:
             transaction = {
-                'date': purchase.bill.bill_date,
+                'date': purchase.bill.bill_date.date(),
                 'type': 'Purchase',
                 'product_name': purchase.product.product_name,
                 'quantity': purchase.quantity,  # Positive for purchases
