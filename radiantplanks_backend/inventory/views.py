@@ -3998,8 +3998,8 @@ class DetailedInventoryReportExcelExportView(APIView):
                     # Prepare item data
                     item = {
                         'Product Name': product.product_name,
-                        'SKU': product.sku,
-                        'Barcode': product.barcode,
+                        'UPC': product.sku,
+                        'Item Code': product.barcode,
                         'Stock Quantity': product.stock_quantity,
                         'Purchase Price': float(product.purchase_price),  # Convert Decimal to float for Excel
                         'Stock Value': float(stock_value),  # Convert Decimal to float for Excel
@@ -4025,8 +4025,8 @@ class DetailedInventoryReportExcelExportView(APIView):
             # Add a row for the total inventory value
             total_row = {
                 'Product Name': 'Total Inventory Value',
-                'SKU': '',
-                'Barcode': '',
+                'UPC': '',
+                'Item Code': '',
                 'Stock Quantity': '',
                 'Purchase Price': '',
                 'Stock Value': float(total_inventory_value),  # Convert Decimal to float for Excel
@@ -4200,7 +4200,7 @@ class ExpenseReportView(APIView):
                 
                 for payment in vendor_payments:
                     payment_item = {
-                        'date': payment.payment_date.date(),
+                        'date': payment.payment_date,
                         'type': 'Payment',
                         'vendor_name': payment.vendor.business_name,
                         'payment_method': payment.payment_method,
@@ -4275,7 +4275,7 @@ class ExpenseReportExcelExportView(APIView):
                 
                 for payment in vendor_payments:
                     payment_item = {
-                        'Date': payment.payment_date.date(),
+                        'Date': payment.payment_date,
                         'Type': 'Payment',
                         'Vendor Name': payment.vendor.business_name,
                         'Payment Method': payment.payment_method,
@@ -4285,7 +4285,7 @@ class ExpenseReportExcelExportView(APIView):
                     report_data.append(payment_item)
             
             # Convert report data to a pandas DataFrame
-            report_data.sort(key=lambda x: x['date'], reverse=True)
+            report_data.sort(key=lambda x: x['Date'], reverse=True)
             df = pd.DataFrame(report_data)
 
             # Create the HttpResponse object with the appropriate Excel headers
