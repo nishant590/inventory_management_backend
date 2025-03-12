@@ -8,6 +8,7 @@ from .models import (Invoice, InvoiceItem, Product, Estimate,
 from .serializers import CategorySerializer, ProductSerializer
 from rest_framework.views import APIView
 from django.core.mail import EmailMessage
+from django.http import HttpResponse
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
@@ -16,6 +17,7 @@ from authentication.models import NewUser
 from django.http import FileResponse
 from accounts.models import Account
 import posixpath
+import pandas as pd
 from django.core.files.storage import FileSystemStorage
 import traceback
 from django.conf import settings
@@ -3725,8 +3727,9 @@ class InventoryHistoryReportView(APIView):
         
         # Calculating initial inventory
         initial_inventory = {}
-        for product in Product.objects.all():
-            initial_stock = product.stock_quantity
+        for product in Product.objects.filter(product_type="product"):
+            initial_stock = 0
+            # initial_stock = product.stock_quantity
             # Adjust initial stock based on transactions before the start date
             previous_purchases = BillItems.objects.filter(bill__bill_date__lt=start_date, product=product)
             previous_sales = InvoiceItem.objects.filter(invoice__bill_date__lt=start_date, product=product)
@@ -3777,7 +3780,7 @@ class InventoryHistoryReportView(APIView):
         
         # Calculating closing inventory
         closing_inventory = {}
-        for product in Product.objects.all():
+        for product in Product.objects.filter(product_type="product"):
             closing_stock = initial_inventory.get(product.product_name, 0)
             # Adjust closing stock based on transactions within the period
             period_purchases = BillItems.objects.filter(bill__bill_date__range=[start_date, end_date], product=product)
@@ -3801,6 +3804,151 @@ class InventoryHistoryReportView(APIView):
         }
         
         return Response(report)
+
+
+class InventoryHistoryXLSXReportView(APIView):
+    def get(self, request):
+        
+        start_date = request.GET.get('start_date')
+        end_date = request.GET.get('end_date')
+        
+        if start_date and end_date:
+            start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+            end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+        else:
+            return Response({"error": "Please provide start_date and end_date parameters."})
+        
+        # Fetching all relevant transactions
+        sales = InvoiceItem.objects.filter(invoice__bill_date__range=[start_date, end_date])
+        purchases = BillItems.objects.filter(bill__bill_date__range=[start_date, end_date])
+        losses = LostProduct.objects.filter(loss_date__range=[start_date, end_date])
+        
+        report_data = []
+        
+        # Calculating initial inventory
+        initial_inventory = {}
+        for product in Product.objects.filter(product_type="product"):
+            initial_stock = 0
+            # Adjust initial stock based on transactions before the start date
+            previous_purchases = BillItems.objects.filter(bill__bill_date__lt=start_date, product=product)
+            previous_sales = InvoiceItem.objects.filter(invoice__bill_date__lt=start_date, product=product)
+            previous_losses = LostProduct.objects.filter(loss_date__lt=start_date, product=product)
+            
+            for purchase in previous_purchases:
+                initial_stock += purchase.quantity
+            for sale in previous_sales:
+                initial_stock -= sale.quantity
+            for loss in previous_losses:
+                initial_stock -= loss.quantity_lost
+            
+            initial_inventory[product.product_name] = initial_stock
+        
+        # Processing transactions
+        for sale in sales:
+            transaction = {
+                'date': sale.invoice.bill_date,
+                'type': 'Sale',
+                'product_name': sale.product.product_name,
+                'quantity': -sale.quantity,  # Negative for sales
+                'unit_price': sale.unit_price,
+            }
+            report_data.append(transaction)
+        
+        for purchase in purchases:
+            transaction = {
+                'date': purchase.bill.bill_date,
+                'type': 'Purchase',
+                'product_name': purchase.product.product_name,
+                'quantity': purchase.quantity,  # Positive for purchases
+                'unit_price': purchase.unit_price,
+            }
+            report_data.append(transaction)
+        
+        for loss in losses:
+            transaction = {
+                'date': loss.loss_date,
+                'type': 'Loss',
+                'product_name': loss.product.product_name,
+                'quantity': -loss.quantity_lost,  # Negative for losses
+                'unit_price': loss.unit_cost,
+            }
+            report_data.append(transaction)
+        
+        # Sorting transactions by date
+        report_data.sort(key=lambda x: x['date'])
+        
+        # Calculating closing inventory
+        closing_inventory = {}
+        for product in Product.objects.filter(product_type="product"):
+            closing_stock = initial_inventory.get(product.product_name, 0)
+            # Adjust closing stock based on transactions within the period
+            period_purchases = BillItems.objects.filter(bill__bill_date__range=[start_date, end_date], product=product)
+            period_sales = InvoiceItem.objects.filter(invoice__bill_date__range=[start_date, end_date], product=product)
+            period_losses = LostProduct.objects.filter(loss_date__range=[start_date, end_date], product=product)
+            
+            for purchase in period_purchases:
+                closing_stock += purchase.quantity
+            for sale in period_sales:
+                closing_stock -= sale.quantity
+            for loss in period_losses:
+                closing_stock -= loss.quantity_lost
+            
+            closing_inventory[product.product_name] = closing_stock
+            
+        # Create Excel file using pandas
+        output = io.BytesIO()
+        
+        # Create a pandas Excel writer using XlsxWriter as the engine
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            # Convert initial inventory to DataFrame and write to Excel
+            initial_df = pd.DataFrame(
+                [{'Product': k, 'Initial Stock': v} for k, v in initial_inventory.items()]
+            )
+            initial_df.to_excel(writer, sheet_name='Initial Inventory', index=False)
+            
+            # Convert transactions to DataFrame and write to Excel
+            if report_data:
+                trans_df = pd.DataFrame(report_data)
+                trans_df.columns = ['Date', 'Transaction Type', 'Product', 'Quantity', 'Unit Price']
+                # Format the date column
+                trans_df['Date'] = pd.to_datetime(trans_df['Date']).dt.strftime('%Y-%m-%d')
+                trans_df.to_excel(writer, sheet_name='Transactions', index=False)
+            else:
+                pd.DataFrame(columns=['Date', 'Transaction Type', 'Product', 'Quantity', 'Unit Price']).to_excel(
+                    writer, sheet_name='Transactions', index=False
+                )
+            
+            # Convert closing inventory to DataFrame and write to Excel
+            closing_df = pd.DataFrame(
+                [{'Product': k, 'Closing Stock': v} for k, v in closing_inventory.items()]
+            )
+            closing_df.to_excel(writer, sheet_name='Closing Inventory', index=False)
+            
+            # Add Summary sheet with period information
+            summary_data = {
+                'Start Date': [start_date.strftime('%Y-%m-%d')],
+                'End Date': [end_date.strftime('%Y-%m-%d')],
+                'Report Generated': [datetime.now().strftime('%Y-%m-%d %H:%M:%S')]
+            }
+            summary_df = pd.DataFrame(summary_data)
+            summary_df.to_excel(writer, sheet_name='Summary', index=False)
+            
+            # Auto-adjust columns width
+            for sheet_name in writer.sheets:
+                worksheet = writer.sheets[sheet_name]
+        
+        # Get the value from the output buffer
+        output.seek(0)
+        
+        # Create the HttpResponse with Excel content type
+        filename = f"inventory_history_{start_date.strftime('%Y%m%d')}_{end_date.strftime('%Y%m%d')}.xlsx"
+        response = HttpResponse(
+            output.getvalue(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        
+        return response
 
 
 class DetailedInventoryReportView(APIView):
@@ -3829,6 +3977,88 @@ class DetailedInventoryReportView(APIView):
             total_inventory_value += item['stock_value']
         
         return Response(inventory_data)
+
+
+
+class DetailedInventoryReportExcelExportView(APIView):
+    def get(self, request):
+        try:
+            # Fetch active products of type "product"
+            products = Product.objects.filter(product_type="product", is_active=True)
+            
+            # Prepare inventory data
+            inventory_data = []
+            total_inventory_value = 0
+            
+            for product in products:
+                try:
+                    # Calculate stock value
+                    stock_value = round(Decimal(product.stock_quantity * product.purchase_price), 2)
+                    
+                    # Prepare item data
+                    item = {
+                        'Product Name': product.product_name,
+                        'SKU': product.sku,
+                        'Barcode': product.barcode,
+                        'Stock Quantity': product.stock_quantity,
+                        'Purchase Price': float(product.purchase_price),  # Convert Decimal to float for Excel
+                        'Stock Value': float(stock_value),  # Convert Decimal to float for Excel
+                        'Reorder Level': product.reorder_level,
+                        'Batch/Lot Number': product.batch_lot_number,
+                        'As On Date': product.as_on_date.strftime('%Y-%m-%d') if product.as_on_date else None,
+                        'Specifications': product.specifications,
+                        'Description': product.purchase_description,
+                        'Tags': product.tags,
+                        'Images': product.images,
+                    }
+                    inventory_data.append(item)
+                    total_inventory_value += item['Stock Value']
+                except Exception as e:
+                    # Log errors for individual products
+                    log.app.error(f"Error processing product {product.id}: {str(e)}")
+                    log.trace.trace(traceback.format_exc())
+                    continue  # Skip this product and continue with the next one
+            
+            # Convert inventory data to a pandas DataFrame
+            df = pd.DataFrame(inventory_data)
+
+            # Add a row for the total inventory value
+            total_row = {
+                'Product Name': 'Total Inventory Value',
+                'SKU': '',
+                'Barcode': '',
+                'Stock Quantity': '',
+                'Purchase Price': '',
+                'Stock Value': float(total_inventory_value),  # Convert Decimal to float for Excel
+                'Reorder Level': '',
+                'Batch/Lot Number': '',
+                'As On Date': '',
+                'Specifications': '',
+                'Description': '',
+                'Tags': '',
+                'Images': '',
+            }
+            total_df = pd.DataFrame([total_row])
+            df = pd.concat([df, total_df], ignore_index=True)
+
+            # Create the HttpResponse object with the appropriate Excel headers
+            response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            response['Content-Disposition'] = 'attachment; filename=detailed_inventory_report.xlsx'
+
+            # Save the DataFrame to the HttpResponse as an Excel file
+            with pd.ExcelWriter(response, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False, sheet_name='Inventory Report')
+
+            return response
+
+        except Exception as e:
+            # Log the error and return a 500 response
+            log.app.error(f"Error generating inventory report: {str(e)}")
+            log.trace.trace(traceback.format_exc())
+            return Response(
+                {"detail": "An error occurred while generating the inventory report. Please try again later."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class DetailedSalesReportView(APIView):
@@ -3865,75 +4095,210 @@ class DetailedSalesReportView(APIView):
         return Response(sales_data)
 
 
-class ExpenseReportView(APIView):
+class DetailedSalesReportExcelExportView(APIView):
     def get(self, request):
+        # Extract query parameters
         start_date = request.GET.get('start_date')
         end_date = request.GET.get('end_date')
-        report_type = request.GET.get('report_type')
         
+        # Fetch invoices
+        invoices = Invoice.objects.filter(is_active=True)
+        
+        # Apply date filters if provided
         if start_date and end_date:
             start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
             end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
-        else:
-            return Response({"error": "Please provide start_date and end_date parameters."})
+            invoices = invoices.filter(bill_date__range=[start_date, end_date])
         
-        if report_type not in ['accrual', 'cash']:
-            return Response({"error": "Invalid report_type. Please use 'accrual' or 'cash'."})
-        
-        report_data = []
-        
-        if report_type == 'accrual':
-            # Fetching all relevant expenses and bills
-            expenses = Expense.objects.filter(payment_date__range=[start_date, end_date])
-            bills = Bill.objects.filter(bill_date__range=[start_date, end_date])
-            
-            # Processing expenses
-            for expense in expenses:
-                expense_items = ExpenseItems.objects.filter(expense=expense, is_active=True)
-                for item in expense_items:
-                    expense_item = {
-                        'date': expense.payment_date,
-                        'type': 'Expense',
-                        'vendor_name': expense.vendor.business_name,
-                        'description': item.description,
-                        'amount': item.price,
-                        'vendor_expense': expense.expense_number,
-                    }
-                    report_data.append(expense_item)
-            
-            # Processing bills
-            for bill in bills:
-                bill_items = BillItems.objects.filter(bill=bill, is_active=True)
-                for item in bill_items:
-                    bill_item = {
-                        'date': bill.bill_date.strftime('%Y-%m-%d'),
-                        'type': 'Bill',
-                        'vendor_name': bill.vendor.business_name,
-                        'description': item.description,
-                        'amount': item.line_total(),
-                        'vendor_bill': bill.bill_number,
-                    }
-                    report_data.append(bill_item)
-        
-        elif report_type == 'cash':
-            # Fetching all relevant vendor payments
-            vendor_payments = VendorPaymentDetails.objects.filter(payment_date__range=[start_date, end_date]).exclude(payment_method='inventory')
-            
-            for payment in vendor_payments:
-                payment_item = {
-                    'date': payment.payment_date.strftime('%Y-%m-%d'),
-                    'type': 'Payment',
-                    'vendor_name': payment.vendor.business_name,
-                    'payment_method': payment.payment_method,
-                    'amount': payment.payment_amount,
-                    'transaction_reference': payment.transaction_reference_id,
+        # Prepare sales data
+        sales_data = []
+        for invoice in invoices:
+            invoice_items = InvoiceItem.objects.filter(invoice=invoice, is_active=True)
+            for item in invoice_items:
+                sales_item = {
+                    'Invoice ID': invoice.id,
+                    'Invoice Date': invoice.bill_date.strftime('%Y-%m-%d'),
+                    'Customer Name': invoice.customer.business_name,
+                    'Customer Email': invoice.customer_email,
+                    'Payment Status': invoice.payment_status,
+                    'Product Name': item.product.product_name,
+                    'SKU': item.product.sku,
+                    'Quantity Sold': item.quantity,
+                    'Unit Price': item.unit_price,
+                    'Total Amount': item.amount,
                 }
-                report_data.append(payment_item)
+                sales_data.append(sales_item)
         
-        # Sorting transactions by date
-        # report_data.sort(key=lambda x: x['date'])
-        
-        return Response(report_data)
+        # Convert sales data to a pandas DataFrame
+        df = pd.DataFrame(sales_data)
+
+        # Create the HttpResponse object with the appropriate Excel headers
+        response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = f'attachment; filename=detailed_sales_report_{start_date}_{end_date}.xlsx'
+
+        # Save the DataFrame to the HttpResponse as an Excel file
+        with pd.ExcelWriter(response, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Sales Report')
+
+        return response
+
+
+class ExpenseReportView(APIView):
+    def get(self, request):
+        try:
+            start_date = request.GET.get('start_date')
+            end_date = request.GET.get('end_date')
+            report_type = request.GET.get('report_type')
+            
+            if start_date and end_date:
+                start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+                end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+            else:
+                return Response({"error": "Please provide start_date and end_date parameters."})
+            
+            if report_type not in ['accrual', 'cash']:
+                return Response({"error": "Invalid report_type. Please use 'accrual' or 'cash'."})
+            
+            report_data = []
+            
+            if report_type == 'accrual':
+                # Fetching all relevant expenses and bills
+                expenses = Expense.objects.filter(payment_date__range=[start_date, end_date])
+                bills = Bill.objects.filter(bill_date__range=[start_date, end_date])
+                
+                # Processing expenses
+                for expense in expenses:
+                    expense_items = ExpenseItems.objects.filter(expense=expense, is_active=True)
+                    for item in expense_items:
+                        expense_item = {
+                            'date': expense.payment_date,
+                            'type': 'Expense',
+                            'vendor_name': expense.vendor.business_name,
+                            'description': item.description,
+                            'amount': item.price,
+                            'vendor_expense': expense.expense_number,
+                        }
+                        report_data.append(expense_item)
+                
+                # Processing bills
+                for bill in bills:
+                    bill_items = BillItems.objects.filter(bill=bill, is_active=True)
+                    for item in bill_items:
+                        bill_item = {
+                            'date': bill.bill_date.strftime('%Y-%m-%d'),
+                            'type': 'Bill',
+                            'vendor_name': bill.vendor.business_name,
+                            'description': item.description,
+                            'amount': item.line_total(),
+                            'vendor_bill': bill.bill_number,
+                        }
+                        report_data.append(bill_item)
+            
+            elif report_type == 'cash':
+                # Fetching all relevant vendor payments
+                vendor_payments = VendorPaymentDetails.objects.filter(payment_date__range=[start_date, end_date]).exclude(payment_method='inventory')
+                
+                for payment in vendor_payments:
+                    payment_item = {
+                        'date': payment.payment_date.strftime('%Y-%m-%d'),
+                        'type': 'Payment',
+                        'vendor_name': payment.vendor.business_name,
+                        'payment_method': payment.payment_method,
+                        'amount': payment.payment_amount,
+                        'transaction_reference': payment.transaction_reference_id,
+                    }
+                    report_data.append(payment_item)
+            
+            # Sorting transactions by date
+            # report_data.sort(key=lambda x: x['date'])
+            
+            return Response(report_data, status=status.HTTP_200_OK)
+        except Exception as e:
+            log.trace.trace(f"Error occurred {traceback.format_exc()}")
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ExpenseReportExcelExportView(APIView):
+    def get(self, request):
+        try:
+            start_date = request.GET.get('start_date')
+            end_date = request.GET.get('end_date')
+            report_type = request.GET.get('report_type')
+            
+            if start_date and end_date:
+                start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+                end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+            else:
+                return Response({"error": "Please provide start_date and end_date parameters."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            if report_type not in ['accrual', 'cash']:
+                return Response({"error": "Invalid report_type. Please use 'accrual' or 'cash'."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            report_data = []
+            
+            if report_type == 'accrual':
+                # Fetching all relevant expenses and bills
+                expenses = Expense.objects.filter(payment_date__range=[start_date, end_date])
+                bills = Bill.objects.filter(bill_date__range=[start_date, end_date])
+                
+                # Processing expenses
+                for expense in expenses:
+                    expense_items = ExpenseItems.objects.filter(expense=expense, is_active=True)
+                    for item in expense_items:
+                        expense_item = {
+                            'Date': expense.payment_date.strftime('%Y-%m-%d'),
+                            'Type': 'Expense',
+                            'Vendor Name': expense.vendor.business_name,
+                            'Description': item.description,
+                            'Amount': item.price,
+                            'Vendor Expense': expense.expense_number,
+                        }
+                        report_data.append(expense_item)
+                
+                # Processing bills
+                for bill in bills:
+                    bill_items = BillItems.objects.filter(bill=bill, is_active=True)
+                    for item in bill_items:
+                        bill_item = {
+                            'Date': bill.bill_date.strftime('%Y-%m-%d'),
+                            'Type': 'Bill',
+                            'Vendor Name': bill.vendor.business_name,
+                            'Description': item.description,
+                            'Amount': item.line_total(),
+                            'Vendor Bill': bill.bill_number,
+                        }
+                        report_data.append(bill_item)
+            
+            elif report_type == 'cash':
+                # Fetching all relevant vendor payments
+                vendor_payments = VendorPaymentDetails.objects.filter(payment_date__range=[start_date, end_date]).exclude(payment_method='inventory')
+                
+                for payment in vendor_payments:
+                    payment_item = {
+                        'Date': payment.payment_date.strftime('%Y-%m-%d'),
+                        'Type': 'Payment',
+                        'Vendor Name': payment.vendor.business_name,
+                        'Payment Method': payment.payment_method,
+                        'Amount': payment.payment_amount,
+                        'Transaction Reference': payment.transaction_reference_id,
+                    }
+                    report_data.append(payment_item)
+            
+            # Convert report data to a pandas DataFrame
+            df = pd.DataFrame(report_data)
+
+            # Create the HttpResponse object with the appropriate Excel headers
+            response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            response['Content-Disposition'] = f'attachment; filename=expense_report_{report_type}_{start_date}_{end_date}.xlsx'
+
+            # Save the DataFrame to the HttpResponse as an Excel file
+            with pd.ExcelWriter(response, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False, sheet_name='Expense Report')
+
+            return response
+        except Exception as e:
+            log.trace.trace(traceback.format_exc())
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class CustomerPaymentsReportView(APIView):
@@ -4014,3 +4379,68 @@ class CustomerPaymentsReportView(APIView):
         else:
             url += f'&page={page}' if '?' in url else f'?page={page}'
         return url
+    
+
+
+class CustomerPaymentsExcelExportView(APIView):
+    def get(self, request):
+        # Extract query parameters
+        customer_id = request.GET.get('customer_id')
+        payment_method = request.GET.get('payment_method')
+        start_date = request.GET.get('start_date')
+        end_date = request.GET.get('end_date')
+        transaction_reference_id = request.GET.get('transaction_reference_id')
+        cheque_number = request.GET.get('cheque_number')
+
+        # Build the base queryset
+        queryset = CustomerPaymentDetails.objects.all()
+
+        # Apply filters
+        if customer_id:
+            queryset = queryset.filter(customer_id=customer_id)
+        if payment_method:
+            queryset = queryset.filter(payment_method=payment_method)
+        if start_date:
+            start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+            queryset = queryset.filter(payment_date__gte=start_date)
+        if end_date:
+            end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+            queryset = queryset.filter(payment_date__lte=end_date)
+        if transaction_reference_id:
+            queryset = queryset.filter(transaction_reference_id=transaction_reference_id)
+        if cheque_number:
+            queryset = queryset.filter(cheque_number=cheque_number)
+
+        # Convert queryset to a pandas DataFrame
+        data = list(queryset.values(
+            'customer__customer_id', 'customer__business_name', 'transaction__id', 'payment_method',
+            'payment_amount', 'payment_date', 'transaction_reference_id',
+            'bank_name', 'cheque_number'
+        ))
+        df = pd.DataFrame(data)
+
+        # Rename columns for better readability
+        df.rename(columns={
+            'customer__id': 'Customer ID',
+            'customer__name': 'Customer Name',
+            'transaction__id': 'Transaction ID',
+            'payment_method': 'Payment Method',
+            'payment_amount': 'Payment Amount',
+            'payment_date': 'Payment Date',
+            'transaction_reference_id': 'Transaction Reference ID',
+            'bank_name': 'Bank Name',
+            'cheque_number': 'Cheque Number',
+        }, inplace=True)
+
+        # Add a column for "Is Invoice"
+        df['Is Invoice'] = df['Payment Method'].str.lower() == 'cost of goods sold'
+
+        # Create the HttpResponse object with the appropriate Excel headers
+        response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = 'attachment; filename=customer_payments_report.xlsx'
+
+        # Save the DataFrame to the HttpResponse as an Excel file
+        with pd.ExcelWriter(response, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Customer Payments Report')
+
+        return response

@@ -35,10 +35,15 @@ from .views import (CategoryListCreateView,
 
                     TestEmailView,
                     InventoryHistoryReportView,
+                    InventoryHistoryXLSXReportView,
                     DetailedInventoryReportView,
+                    DetailedInventoryReportExcelExportView,
                     DetailedSalesReportView,
+                    DetailedSalesReportExcelExportView,
                     ExpenseReportView,
+                    ExpenseReportExcelExportView,
                     CustomerPaymentsReportView,
+                    CustomerPaymentsExcelExportView,
                     )
 
 urlpatterns = [
@@ -86,8 +91,13 @@ urlpatterns = [
 
     path('test/email-server/', TestEmailView.as_view(), name='test-email-server'),
     path('inventory-history-report/', InventoryHistoryReportView.as_view(), name='inventory-history-report'),
+    path('inventory-history-report/xlsx/', InventoryHistoryXLSXReportView.as_view(), name='inventory-history-report-xlsx'),
     path('detailed-inventory-report/', DetailedInventoryReportView.as_view(), name='detailed-inventory-report'),
+    path('detailed-inventory-report/xlsx/', DetailedInventoryReportExcelExportView.as_view(), name='detailed-inventory-report-xlsx'),
     path('detailed-sales-report/', DetailedSalesReportView.as_view(), name='detailed-sales-report'),
+    path('detailed-sales-report/xlsx/', DetailedSalesReportExcelExportView.as_view(), name='detailed-sales-report-xlsx'),
     path('detailed-expense-report/', ExpenseReportView.as_view(), name='detailed-expense-report'),
+    path('detailed-expense-report/xlsx/', ExpenseReportExcelExportView.as_view(), name='detailed-expense-report-xlsx'),
     path('detailed-customer-payment-report/', CustomerPaymentsReportView.as_view(), name='detailed-customer-payment-report'),
+    path('detailed-customer-payment-report/xlsx/', CustomerPaymentsExcelExportView.as_view(), name='detailed-customer-payment-excel'),
 ]

@@ -178,8 +178,10 @@ class BulkCustomerCreateView(APIView):
         df[['bcc_email', 'cc_email']].replace("nan", "") 
 
         successful_creates = 0
+        # if 'tax_exempt' in valid_rows.columns:
+        #     valid_rows['tax_exempt'] = valid_rows['tax_exempt'].apply(lambda x: x.lower() == 'true')
 
-        df['tax_exempt'] = df['tax_exempt'].apply(lambda x: x.lower() == 'true')
+        
 
         try:
             with transaction.atomic():

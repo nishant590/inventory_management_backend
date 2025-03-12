@@ -24,8 +24,8 @@ from django.shortcuts import get_object_or_404
 from django.db import transaction
 from django.utils.timezone import now
 from dateutil.relativedelta import relativedelta
-
-
+from io import BytesIO
+import math
 
 
 class AddAccountAPI(APIView):
@@ -1716,35 +1716,54 @@ class TransactionListView(APIView):
     
 
 
-
 class BankAccountTransactionsAPIView(APIView):
-    # Use pagination class
-    pagination_class = PageNumberPagination
-
     def get(self, request, *args, **kwargs):
-        # Get the account_id from query parameters
+        # Get the account_id and pagination parameters from query parameters
         account_id = request.GET.get('account_id', None)
         start_date = request.GET.get('start_date')
         end_date = request.GET.get('end_date')
-
+        
+        # Simple pagination parameters
+        page = int(request.GET.get('page', 1))
+        page_size = int(request.GET.get('page_size', 10))
+        
         if not account_id:
             return Response(
                 {"error": "account_id is required as a query parameter."},
                 status=status.HTTP_400_BAD_REQUEST
             )
-
+            
         # Fetch transactions that have at least one TransactionLine linked to the specified account
         transactions = Transaction.objects.filter(lines__account_id=account_id).distinct()
-
+        
         if start_date and end_date:
             transactions = transactions.filter(date__range=[start_date, end_date])
-
+        
+        # Get total count for pagination
+        total_count = transactions.count()
+        total_pages = math.ceil(total_count / page_size)
+        
+        # Manual pagination
+        start_index = (page - 1) * page_size
+        end_index = start_index + page_size
+        paginated_transactions = transactions[start_index:end_index]
+        
+        # Build pagination metadata
+        pagination_info = {
+            "total_count": total_count,
+            "total_pages": total_pages,
+            "current_page": page,
+            "page_size": page_size,
+            "has_next": page < total_pages,
+            "has_previous": page > 1
+        }
+        
         # Prepare the response data
         response_data = []
-        for transaction in transactions:
+        for transaction in paginated_transactions:
             # Fetch transaction lines for the current transaction and the specified account
             transaction_lines = TransactionLine.objects.filter(transaction=transaction, account_id=account_id)
-
+            
             # Build the transaction data
             transaction_data = {
                 "id": transaction.id,
@@ -1754,7 +1773,7 @@ class BankAccountTransactionsAPIView(APIView):
                 "description": transaction.description,
                 "lines": []
             }
-
+            
             # Add transaction lines to the transaction data
             for line in transaction_lines:
                 transaction_data["lines"].append({
@@ -1767,10 +1786,98 @@ class BankAccountTransactionsAPIView(APIView):
                     "bill_id": line.bill_id,
                     "is_active": line.is_active
                 })
-
+                
             # Add the transaction data to the response
             response_data.append(transaction_data)
+            
+        # Return the response with pagination metadata
+        return Response({
+            "pagination": pagination_info,
+            "data": response_data
+        }, status=status.HTTP_200_OK)
 
-        # Return the paginated response
-        return Response({"data":response_data}, status=status.HTTP_200_OK)
-    
+
+class BankAccountTransactionsExportAPIView(APIView):
+    def get(self, request, *args, **kwargs):
+        # Get the account_id from query parameters
+        account_id = request.GET.get('account_id', None)
+        start_date = request.GET.get('start_date')
+        end_date = request.GET.get('end_date')
+        
+        if not account_id:
+            return Response(
+                {"error": "account_id is required as a query parameter."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        # Fetch transactions that have at least one TransactionLine linked to the specified account
+        transactions = Transaction.objects.filter(lines__account_id=account_id).distinct()
+        
+        if start_date and end_date:
+            transactions = transactions.filter(date__range=[start_date, end_date])
+        
+        # Prepare data for pandas DataFrame
+        data = []
+        for transaction in transactions:
+            # Fetch transaction lines for the current transaction and the specified account
+            transaction_lines = TransactionLine.objects.filter(transaction=transaction, account_id=account_id)
+            
+            for line in transaction_lines:
+                data.append({
+                    'Transaction ID': transaction.id,
+                    'Reference Number': transaction.reference_number,
+                    'Transaction Type': transaction.transaction_type,
+                    'Date': transaction.date,
+                    'Description': transaction.description,
+                    'Line ID': line.id,
+                    'Account': line.account.id,
+                    'Line Description': line.description,
+                    'Debit Amount': float(line.debit_amount) if line.debit_amount else 0,
+                    'Credit Amount': float(line.credit_amount) if line.credit_amount else 0,
+                    'Invoice ID': line.invoice_id,
+                    'Bill ID': line.bill_id,
+                    'Is Active': "Yes" if line.is_active else "No"
+                })
+        
+        # Create DataFrame from data
+        df = pd.DataFrame(data)
+        
+        # Generate Excel file
+        output = BytesIO()
+        
+        # Create a Pandas Excel writer using BytesIO as the target
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df.to_excel(writer, sheet_name='Transactions', index=False)
+            
+            # Get the xlsxwriter workbook and worksheet objects
+            workbook = writer.book
+            worksheet = writer.sheets['Transactions']
+            
+            # Add some formatting
+            header_format = workbook.add_format({'bold': True, 'bg_color': '#D9E1F2', 'border': 1})
+            
+            # Write the column headers with the defined format
+            for col_num, value in enumerate(df.columns.values):
+                worksheet.write(0, col_num, value, header_format)
+                
+            # Adjust column widths
+            for i, col in enumerate(df.columns):
+                # Set column width based on max length in column
+                max_len = max(df[col].astype(str).apply(len).max(), len(str(col))) + 2
+                worksheet.set_column(i, i, max_len)
+        
+        # Generate filename with account_id and date range
+        filename = f"transactions_account_{account_id}"
+        if start_date and end_date:
+            filename += f"_{start_date}_to_{end_date}"
+        filename += ".xlsx"
+        
+        # Set up the response with appropriate headers
+        output.seek(0)
+        response = HttpResponse(
+            output.getvalue(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        
+        return response

@@ -71,6 +71,8 @@ class Account(models.Model):
             {'name': 'Main Bank Account', 'account_type': 'bank', 'code': 'BANK-001'},
             {'name': 'Accounts Receivable', 'account_type': 'accounts_receivable', 'code': 'AR-001'},
             {'name': 'Inventory', 'account_type': 'inventory', 'code': 'INV-001'},
+            
+            # Equity Accounts
             {'name': 'Owner Equity', 'account_type': 'owner_equity', 'code': 'OWN-001'},
 
             # Liability Accounts

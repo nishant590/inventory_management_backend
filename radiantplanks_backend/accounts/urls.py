@@ -20,7 +20,8 @@ from .views import (AddAccountAPI,
                     ProfitLossComparisonView,
                     ProfitLossComparisonAccrualView,
                     ProfitLossComparisonXLSXView,
-                    BankAccountTransactionsAPIView
+                    BankAccountTransactionsAPIView,
+                    BankAccountTransactionsExportAPIView
                     )
 
 urlpatterns = [
@@ -50,4 +51,5 @@ urlpatterns = [
     path('owner-contribution-delete/<int:id>/', DeleteOwnerTransactionAPI.as_view(), name='owner-contribution-delete'),
   
     path('view-bank-transactions/', BankAccountTransactionsAPIView.as_view(), name='view-bank-transactions'),
+    path('view-bank-transactions/xlsx/', BankAccountTransactionsExportAPIView.as_view(), name='view-bank-transactions-xlsx'),
 ] 
