@@ -459,6 +459,68 @@ class BalanceSheetView(APIView):
         })
 
 
+class CompareBalanceSheetView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        period1_start = request.query_params.get('period1_start')
+        period1_end = request.query_params.get('period1_end')
+        period2_start = request.query_params.get('period2_start')
+        period2_end = request.query_params.get('period2_end')
+
+        try:
+            period1_start = datetime.strptime(period1_start, "%Y-%m-%d") if period1_start else None
+            period1_end = datetime.strptime(period1_end, "%Y-%m-%d") if period1_end else None
+            period2_start = datetime.strptime(period2_start, "%Y-%m-%d") if period2_start else None
+            period2_end = datetime.strptime(period2_end, "%Y-%m-%d") if period2_end else None
+        except ValueError:
+            return JsonResponse({'error': 'Invalid date format. Use YYYY-MM-DD.'}, status=400)
+
+        def calculate_balance(account, start_date, end_date, non_asset=False):
+            transaction_lines = TransactionLine.objects.filter(
+                account=account,
+                transaction__is_active=True,
+                is_active=True
+            )
+            if start_date and end_date:
+                transaction_lines = transaction_lines.filter(
+                    transaction__date__gte=start_date,
+                    transaction__date__lte=end_date
+                )
+            
+            debit_sum = transaction_lines.aggregate(Sum('debit_amount'))['debit_amount__sum'] or Decimal('0.00')
+            credit_sum = transaction_lines.aggregate(Sum('credit_amount'))['credit_amount__sum'] or Decimal('0.00')
+            return credit_sum - debit_sum if non_asset else debit_sum - credit_sum
+
+        def get_comparison_data(account_types, non_asset=False):
+            comparison = []
+            for account_type in account_types:
+                accounts = Account.objects.filter(account_type=account_type, is_active=True)
+                for account in accounts:
+                    balance_period1 = calculate_balance(account, period1_start, period1_end, non_asset)
+                    balance_period2 = calculate_balance(account, period2_start, period2_end, non_asset)
+                    comparison.append({
+                        'name': account.name,
+                        'code': account.code,
+                        'period1_balance': float(balance_period1),
+                        'period2_balance': float(balance_period2),
+                        'difference': float(balance_period2 - balance_period1)
+                    })
+            return comparison
+
+        asset_types = ['cash', 'bank', 'accounts_receivable', 'inventory', 'fixed_assets', 'other_current_assets']
+        liability_types = ['accounts_payable', 'credit_card', 'current_liabilities', 'long_term_liabilities', 'tax_payable']
+        equity_types = ['owner_equity', 'retained_earnings']
+
+        return JsonResponse({
+            'assets': get_comparison_data(asset_types),
+            'liabilities': get_comparison_data(liability_types, non_asset=True),
+            'equity': get_comparison_data(equity_types, non_asset=True)
+        })
+
+
+
+
 class BalanceSheetXLSXView(APIView):
     permission_classes = [IsAuthenticated]
 
